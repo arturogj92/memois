@@ -1,0 +1,34 @@
+# Xcode
+*.xcodeproj
+xcuserdata/
+DerivedData/
+build/
+
+# XcodeGen output
+Memois.xcodeproj/
+
+# Release artifacts
+release/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Agent config
+CLAUDE.md
+AGENTS.md
+
+# Logs
+*.log

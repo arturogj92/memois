@@ -1,0 +1,36 @@
+name: Memois
+options:
+  bundleIdPrefix: com.vzgb9jp
+  deploymentTarget:
+    macOS: 14.0
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.vzgb9jp.memois
+    PRODUCT_NAME: Memois
+    SWIFT_VERSION: 5.10
+    GENERATE_INFOPLIST_FILE: NO
+    INFOPLIST_FILE: Resources/Info.plist
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ZC8MCRVRBP
+    CODE_SIGN_IDENTITY: "Developer ID Application: Arturo García Jurado (ZC8MCRVRBP)"
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.0
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ENABLE_APP_SANDBOX: NO
+targets:
+  Memois:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/App
+      - path: Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vzgb9jp.memois
+        INFOPLIST_FILE: Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Resources/Memois.entitlements
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Developer ID Application: Arturo García Jurado (ZC8MCRVRBP)"
+        ENABLE_HARDENED_RUNTIME: YES
+    scheme:
+      testTargets: []
