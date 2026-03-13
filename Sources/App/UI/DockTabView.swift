@@ -2,7 +2,10 @@ import SwiftUI
 
 struct DockTabView: View {
     @ObservedObject var model: AppModel
-    var onTap: @MainActor () -> Void
+    var onStop: @MainActor () -> Void
+    var onExpandChanged: @MainActor (Bool) -> Void
+
+    @State private var isExpanded = false
 
     private var isRecording: Bool {
         model.sessionState == .recording
@@ -11,10 +14,6 @@ struct DockTabView: View {
     private var isError: Bool {
         if case .error = model.sessionState { return true }
         return false
-    }
-
-    private var isExpanded: Bool {
-        isRecording || isError
     }
 
     private var errorMessage: String? {
@@ -38,6 +37,12 @@ struct DockTabView: View {
             pillView
         }
         .frame(width: 280, height: 240, alignment: .bottom)
+        .onChange(of: isRecording) { _, recording in
+            if !recording {
+                isExpanded = false
+                onExpandChanged(false)
+            }
+        }
     }
 
     private var formattedDuration: String {
@@ -47,54 +52,24 @@ struct DockTabView: View {
     }
 
     private var pillView: some View {
-        HStack(spacing: 6) {
+        VStack(spacing: 0) {
             if isError {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white)
-                if let msg = errorMessage {
-                    Text(msg)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.95))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+                errorContent
+            } else if isRecording && isExpanded {
+                expandedContent
             } else if isRecording {
-                // Pulsing red dot
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 7, height: 7)
-                    .scaleEffect(isRecording ? 1.3 : 1.0)
-                    .opacity(isRecording ? 0.6 : 1.0)
-                    .animation(
-                        .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
-                        value: isRecording
-                    )
-                // Timer
-                Text(formattedDuration)
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
-                // Mini audio level bars
-                HStack(spacing: 1.5) {
-                    ForEach(0..<3, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(Color(red: 0.0, green: 0.85, blue: 0.95))
-                            .frame(width: 2, height: barHeight(index: i))
-                    }
-                }
-                .frame(width: 12, height: 12)
+                compactRecordingContent
             } else {
                 IdleWaveView()
             }
         }
-        .frame(width: isError ? nil : (isRecording ? nil : 40), height: 18)
-        .padding(.horizontal, isError ? 10 : (isRecording ? 10 : 8))
-        .padding(.vertical, 5)
+        .padding(.horizontal, isExpanded ? 12 : (isError ? 10 : (isRecording ? 10 : 8)))
+        .padding(.vertical, isExpanded ? 10 : 5)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: isExpanded ? 14 : 8, style: .continuous)
                 .fill(pillFill)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: isExpanded ? 14 : 8, style: .continuous)
                         .strokeBorder(
                             isRecording
                                 ? AnyShapeStyle(LinearGradient(
@@ -113,17 +88,145 @@ struct DockTabView: View {
                 )
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
         )
-        .frame(maxWidth: isError ? 260 : nil)
-        .contentShape(RoundedRectangle(cornerRadius: 8))
-        .onTapGesture { onTap() }
+        .frame(maxWidth: isExpanded ? 260 : (isError ? 260 : nil))
+        .contentShape(RoundedRectangle(cornerRadius: isExpanded ? 14 : 8))
+        .onTapGesture {
+            if isRecording && !isExpanded {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isExpanded = true
+                }
+                onExpandChanged(true)
+            }
+        }
         .animation(.easeInOut(duration: 0.3), value: isRecording)
         .animation(.easeInOut(duration: 0.3), value: isError)
+        .animation(.easeInOut(duration: 0.25), value: isExpanded)
+    }
+
+    // MARK: - Compact recording pill (dot + timer + dual level dots)
+
+    private var compactRecordingContent: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 7, height: 7)
+                .scaleEffect(isRecording ? 1.3 : 1.0)
+                .opacity(isRecording ? 0.6 : 1.0)
+                .animation(
+                    .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
+                    value: isRecording
+                )
+            Text(formattedDuration)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.9))
+
+            // Dual level indicators
+            VStack(spacing: 2) {
+                // Mic level dot
+                Circle()
+                    .fill(Color.green.opacity(Double(max(0.15, model.micLevel))))
+                    .frame(width: 5, height: 5)
+                // System level dot
+                Circle()
+                    .fill(Color.cyan.opacity(Double(max(0.15, model.systemLevel))))
+                    .frame(width: 5, height: 5)
+            }
+        }
+        .frame(height: 18)
+    }
+
+    // MARK: - Expanded: name field + stop button
+
+    private var expandedContent: some View {
+        VStack(spacing: 8) {
+            // Top row: dot + timer + collapse arrow
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 7, height: 7)
+                    .scaleEffect(1.3)
+                    .opacity(0.6)
+                    .animation(
+                        .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
+                        value: isRecording
+                    )
+                Text(formattedDuration)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+
+                Spacer()
+
+                // Collapse chevron
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isExpanded = false
+                    }
+                    onExpandChanged(false)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Name field + stop button row
+            HStack(spacing: 8) {
+                TextField("Recording name...", text: $model.recordingName)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.white.opacity(0.1))
+                    )
+
+                // Stop button
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isExpanded = false
+                    }
+                    onExpandChanged(false)
+                    onStop()
+                } label: {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.red)
+                        .frame(width: 16, height: 16)
+                        .padding(6)
+                        .background(
+                            Circle()
+                                .fill(Color.white.opacity(0.1))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Error content
+
+    private var errorContent: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
+            if let msg = errorMessage {
+                Text(msg)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .frame(height: 18)
     }
 
     private func barHeight(index: Int) -> CGFloat {
         let base: CGFloat = 3
         let maxH: CGFloat = 12
-        let level = CGFloat(model.audioLevel)
+        let level = CGFloat(max(model.micLevel, model.systemLevel))
         let offsets: [CGFloat] = [0.3, 0.0, 0.6]
         let h = base + (maxH - base) * max(0.1, level + offsets[index] * level * 0.5)
         return min(maxH, h)
@@ -137,8 +240,6 @@ struct IdleWaveView: View {
             let h = size.height
             let midY = h / 2
 
-            // Sharp waveform matching app icon:
-            // flat -> peaks -> flat
             let points: [(CGFloat, CGFloat)] = [
                 (0.00, 0.50),
                 (0.12, 0.50),

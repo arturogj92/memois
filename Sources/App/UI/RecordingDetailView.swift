@@ -9,7 +9,14 @@ struct RecordingDetailView: View {
     let recording: Recording
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var transcriptText: String = ""
+    @State private var rawTranscript: String = ""
+    @State private var speakerNames: [String: String] = [:]
+    @State private var detectedSpeakers: [String] = []
+
+    private var displayTranscript: String {
+        guard !rawTranscript.isEmpty else { return "" }
+        return model.applyingSpeakerNames(speakerNames, to: rawTranscript)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -30,11 +37,49 @@ struct RecordingDetailView: View {
                     .keyboardShortcut(.cancelAction)
             }
 
+            // Speaker renaming section
+            if !detectedSpeakers.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Speakers")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.5))
+
+                    LazyVGrid(columns: [
+                        GridItem(.flexible(), spacing: 10),
+                        GridItem(.flexible(), spacing: 10),
+                    ], spacing: 8) {
+                        ForEach(detectedSpeakers, id: \.self) { speaker in
+                            HStack(spacing: 6) {
+                                Text("\(speaker)")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.4))
+                                    .frame(width: 14)
+
+                                TextField("Name", text: Binding(
+                                    get: { speakerNames[speaker] ?? "" },
+                                    set: { newValue in
+                                        speakerNames[speaker] = newValue
+                                        model.saveSpeakerNames(speakerNames, for: recording)
+                                    }
+                                ))
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.surfaceCard)
+                )
+            }
+
             // Transcript content
             ScrollView {
-                Text(transcriptText.isEmpty ? "No transcript available" : transcriptText)
+                Text(displayTranscript.isEmpty ? "No transcript available" : displayTranscript)
                     .font(.system(size: 13, weight: .regular, design: .rounded))
-                    .foregroundStyle(transcriptText.isEmpty ? .white.opacity(0.3) : .white.opacity(0.85))
+                    .foregroundStyle(displayTranscript.isEmpty ? .white.opacity(0.3) : .white.opacity(0.85))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
@@ -51,7 +96,7 @@ struct RecordingDetailView: View {
                 Button {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
-                    pasteboard.setString(transcriptText, forType: .string)
+                    pasteboard.setString(displayTranscript, forType: .string)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "doc.on.doc")
@@ -59,7 +104,7 @@ struct RecordingDetailView: View {
                     }
                     .font(.system(size: 12, weight: .medium))
                 }
-                .disabled(transcriptText.isEmpty)
+                .disabled(displayTranscript.isEmpty)
 
                 Button {
                     if let url = recording.transcriptionURL {
@@ -76,10 +121,28 @@ struct RecordingDetailView: View {
             }
         }
         .padding(24)
-        .frame(width: 560, height: 480)
+        .frame(width: 560, height: 520)
         .background(Color.surfaceBase)
         .onAppear {
-            transcriptText = model.readTranscript(for: recording) ?? ""
+            rawTranscript = model.readTranscript(for: recording) ?? ""
+            speakerNames = model.loadSpeakerNames(for: recording)
+            detectedSpeakers = extractSpeakers(from: rawTranscript)
         }
+    }
+
+    private func extractSpeakers(from text: String) -> [String] {
+        let pattern = #"Speaker ([A-Z]):"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let nsString = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsString.length))
+        var seen = Set<String>()
+        var result: [String] = []
+        for match in matches {
+            let speaker = nsString.substring(with: match.range(at: 1))
+            if seen.insert(speaker).inserted {
+                result.append(speaker)
+            }
+        }
+        return result
     }
 }

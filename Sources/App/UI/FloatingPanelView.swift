@@ -71,29 +71,32 @@ struct FloatingPanelView: View {
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .center)
 
-                    // Audio level visualizer - horizontal bar
-                    AudioCaptureBar(level: model.audioLevel)
-                        .frame(height: 6)
-
-                    // Capture sources
-                    HStack(spacing: 16) {
-                        HStack(spacing: 4) {
+                    // Separate audio level bars
+                    VStack(spacing: 6) {
+                        HStack(spacing: 6) {
                             Image(systemName: "mic.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.green.opacity(0.7))
+                                .font(.system(size: 9))
+                                .foregroundStyle(model.micLevel > 0.05 ? .green : .green.opacity(0.3))
+                                .frame(width: 14)
+                            AudioCaptureBar(level: model.micLevel, color: .green)
+                                .frame(height: 5)
                             Text("Mic")
-                                .font(.system(size: 10))
+                                .font(.system(size: 9))
                                 .foregroundStyle(.secondary)
+                                .frame(width: 30, alignment: .trailing)
                         }
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             Image(systemName: "speaker.wave.2.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.cyan.opacity(0.7))
-                            Text("System Audio")
-                                .font(.system(size: 10))
+                                .font(.system(size: 9))
+                                .foregroundStyle(model.systemLevel > 0.05 ? .cyan : .cyan.opacity(0.3))
+                                .frame(width: 14)
+                            AudioCaptureBar(level: model.systemLevel, color: .cyan)
+                                .frame(height: 5)
+                            Text("System")
+                                .font(.system(size: 9))
                                 .foregroundStyle(.secondary)
+                                .frame(width: 30, alignment: .trailing)
                         }
-                        Spacer()
                     }
                 }
                 .padding(16)
@@ -133,26 +136,21 @@ struct FloatingPanelView: View {
     }
 }
 
-// Horizontal audio level bar with gradient
+// Horizontal audio level bar
 struct AudioCaptureBar: View {
     let level: Float
+    var color: Color = .green
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                // Background track
                 RoundedRectangle(cornerRadius: 3)
                     .fill(Color.white.opacity(0.08))
 
-                // Active level
                 RoundedRectangle(cornerRadius: 3)
                     .fill(
                         LinearGradient(
-                            colors: [
-                                Color(red: 0.3, green: 0.95, blue: 0.4),
-                                Color(red: 0.0, green: 0.85, blue: 0.95),
-                                Color(red: 1.0, green: 0.85, blue: 0.1),
-                            ],
+                            colors: [color, color.opacity(0.7), .yellow],
                             startPoint: .leading,
                             endPoint: .trailing
                         )

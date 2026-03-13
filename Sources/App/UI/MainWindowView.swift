@@ -32,6 +32,8 @@ struct MainWindowView: View {
     @State private var sidebarCollapsed = false
     @State private var isEditingAPIKey = false
     @State private var selectedRecording: Recording?
+    @State private var editingNameID: UUID?
+    @State private var editingNameText = ""
 
     private enum SidebarTab: String, CaseIterable, Identifiable {
         case recordings = "Recordings"
@@ -72,6 +74,7 @@ struct MainWindowView: View {
             if dateStr.localizedCaseInsensitiveContains(searchText) ||
                 recording.transcriptionStatus.rawValue.localizedCaseInsensitiveContains(searchText) ||
                 (recording.folderName ?? "").localizedCaseInsensitiveContains(searchText) ||
+                (recording.name ?? "").localizedCaseInsensitiveContains(searchText) ||
                 recording.formattedDuration.contains(searchText) {
                 return true
             }
@@ -353,10 +356,57 @@ struct MainWindowView: View {
 
     private func recordingRow(_ recording: Recording) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Recording name — editable inline
+            HStack(spacing: 4) {
+                if editingNameID == recording.id {
+                    TextField("Recording name...", text: $editingNameText, onCommit: {
+                        model.renameRecording(id: recording.id, name: editingNameText)
+                        editingNameID = nil
+                    })
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.surfaceInput)
+                    )
+
+                    Button {
+                        model.renameRecording(id: recording.id, name: editingNameText)
+                        editingNameID = nil
+                    } label: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.brandGreen)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(recording.name ?? recording.createdAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(recording.name != nil ? 0.9 : 0.6))
+
+                    Button {
+                        editingNameText = recording.name ?? ""
+                        editingNameID = recording.id
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.3))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
             HStack {
-                Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
+                if recording.name != nil {
+                    Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
 
                 Spacer()
 
@@ -531,7 +581,10 @@ struct MainWindowView: View {
                     HStack(spacing: 24) {
                         statItem(value: "\(stats.totalTranscriptions)", label: "Transcriptions")
                         statItem(value: stats.formattedTotalDuration, label: "Total Transcribed")
-                        statItem(value: stats.formattedCost, label: "Est. Cost")
+                        statItem(
+                            value: stats.estimatedCostUSD < 50.0 ? "$0.00" : String(format: "$%.2f", stats.estimatedCostUSD - 50.0),
+                            label: stats.estimatedCostUSD < 50.0 ? "Cost (Free Tier)" : "Cost (Paid)"
+                        )
                     }
 
                     if let lastDate = stats.lastTranscriptionDate {
@@ -620,15 +673,16 @@ struct MainWindowView: View {
                         .foregroundStyle(.white.opacity(0.4))
 
                     let usedPct = min(stats.estimatedCostUSD / 50.0, 1.0)
+                    let remaining = max(50.0 - stats.estimatedCostUSD, 0)
                     VStack(alignment: .leading, spacing: 4) {
                         ProgressView(value: usedPct)
                             .tint(usedPct < 0.8 ? Color.brandGreen : Color.brandPink)
                         HStack {
-                            Text(String(format: "%.2f%% used", usedPct * 100))
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white.opacity(0.4))
+                            Text(String(format: "$%.2f remaining", remaining))
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(remaining > 10 ? Color.brandGreen.opacity(0.8) : Color.brandPink.opacity(0.8))
                             Spacer()
-                            Text(String(format: "$%.4f / $50.00", stats.estimatedCostUSD))
+                            Text(String(format: "$%.4f of $50.00 used", stats.estimatedCostUSD))
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.4))
                         }

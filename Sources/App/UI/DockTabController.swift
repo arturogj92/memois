@@ -2,9 +2,10 @@ import AppKit
 import Combine
 import SwiftUI
 
-// Panel subclass that never steals focus — dragging won't activate the app
+// Panel subclass that only accepts keyboard when explicitly allowed (for text input)
 private class NonActivatingPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var allowKeyboard = false
+    override var canBecomeKey: Bool { allowKeyboard }
     override var canBecomeMain: Bool { false }
 }
 
@@ -27,18 +28,31 @@ final class DockTabController {
     @MainActor init(model: AppModel, settings: SettingsStore) {
         self.model = model
         self.settings = settings
+        // Placeholder — will be set after panel is created
+        var panelRef: NonActivatingPanel?
         let tabView = DockTabView(
             model: model,
-            onTap: { @MainActor in model.toggleRecording() }
+            onStop: { @MainActor in model.toggleRecording() },
+            onExpandChanged: { @MainActor expanded in
+                guard let p = panelRef else { return }
+                p.allowKeyboard = expanded
+                if expanded {
+                    p.makeKey()
+                } else {
+                    p.resignKey()
+                }
+            }
         )
         hostingController = NSHostingController(rootView: tabView)
 
-        panel = NonActivatingPanel(
+        let thePanel = NonActivatingPanel(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 120),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
+        panel = thePanel
+        panelRef = thePanel
         panel.contentViewController = hostingController
         panel.isFloatingPanel = true
         panel.level = .statusBar
@@ -168,8 +182,10 @@ final class DockTabController {
 
     private func pillScreenRect() -> NSRect {
         let f = panel.frame
-        let pillWidth: CGFloat = 140
-        let pillHeight: CGFloat = 44
+        // Use wider/taller rect when panel accepts keyboard (expanded state)
+        let isExpanded = (panel as? NonActivatingPanel)?.allowKeyboard ?? false
+        let pillWidth: CGFloat = isExpanded ? 270 : 140
+        let pillHeight: CGFloat = isExpanded ? 80 : 44
         return NSRect(
             x: f.midX - pillWidth / 2,
             y: f.minY,

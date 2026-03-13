@@ -20,11 +20,13 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var sessionState: SessionState = .idle
     @Published private(set) var statusMessage = "Ready"
-    @Published private(set) var audioLevel: Float = 0
+    @Published private(set) var micLevel: Float = 0
+    @Published private(set) var systemLevel: Float = 0
     @Published private(set) var recordingDuration: TimeInterval = 0
     @Published private(set) var permissionStatus: PermissionStatus
     @Published var recordings: [Recording]
     @Published private(set) var activeTranscription: TranscriptionProgress = .none
+    @Published var recordingName = ""
 
     let settings: SettingsStore
     let transcriptionStats = TranscriptionStatsStore()
@@ -56,9 +58,14 @@ final class AppModel: ObservableObject {
         self.permissionStatus = permissions.currentStatus()
         self.recordings = recordingStore.load()
 
-        audioRecorder.onAudioLevel = { [weak self] level in
+        audioRecorder.onMicLevel = { [weak self] level in
             Task { @MainActor [weak self] in
-                self?.audioLevel = level
+                self?.micLevel = level
+            }
+        }
+        audioRecorder.onSystemLevel = { [weak self] level in
+            Task { @MainActor [weak self] in
+                self?.systemLevel = level
             }
         }
 
@@ -142,6 +149,7 @@ final class AppModel: ObservableObject {
         statusMessage = "Recording..."
         recordingStartedAt = Date()
         recordingDuration = 0
+        recordingName = ""
         showFloatingPanel?()
 
         if settings.soundEffectsEnabled {
@@ -191,6 +199,7 @@ final class AppModel: ObservableObject {
                 durationSeconds: duration,
                 audioFileName: url.lastPathComponent,
                 folderName: audioRecorder.recordingFolderName,
+                name: recordingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : recordingName.trimmingCharacters(in: .whitespacesAndNewlines),
                 transcriptionFileName: nil,
                 transcriptionStatus: .none,
                 transcriptionModel: nil,
@@ -200,7 +209,8 @@ final class AppModel: ObservableObject {
             recordings.insert(recording, at: 0)
             recordingStore.save(recordings)
             statusMessage = "Recording saved"
-            audioLevel = 0
+            micLevel = 0
+            systemLevel = 0
             hideFloatingPanel?()
         }
     }
@@ -305,12 +315,42 @@ final class AppModel: ObservableObject {
         return try? String(contentsOf: url, encoding: .utf8)
     }
 
+    func loadSpeakerNames(for recording: Recording) -> [String: String] {
+        let url = recording.speakerNamesURL
+        guard let data = try? Data(contentsOf: url),
+              let names = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return [:]
+        }
+        return names
+    }
+
+    func saveSpeakerNames(_ names: [String: String], for recording: Recording) {
+        let url = recording.speakerNamesURL
+        guard let data = try? JSONEncoder().encode(names) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    func applyingSpeakerNames(_ names: [String: String], to transcript: String) -> String {
+        var result = transcript
+        for (key, name) in names where !name.isEmpty {
+            result = result.replacingOccurrences(of: "Speaker \(key):", with: "\(name):")
+        }
+        return result
+    }
+
+    func renameRecording(id: UUID, name: String) {
+        guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
+        recordings[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : name.trimmingCharacters(in: .whitespacesAndNewlines)
+        recordingStore.save(recordings)
+    }
+
     func showInFinder(recording: Recording) {
         NSWorkspace.shared.selectFile(recording.audioURL.path, inFileViewerRootedAtPath: recording.audioURL.deletingLastPathComponent().path)
     }
 
     private func fail(with message: String) {
-        audioLevel = 0
+        micLevel = 0
+        systemLevel = 0
         durationTimer?.invalidate()
         durationTimer = nil
         sessionState = .error(message)

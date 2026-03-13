@@ -9,6 +9,7 @@ struct Recording: Codable, Identifiable {
     /// Subfolder name inside Recordings/ (e.g. "2026-03-12_22-28-15"). Nil for legacy flat recordings.
     var folderName: String?
 
+    var name: String?
     var transcriptionFileName: String?
     var transcriptionStatus: TranscriptionStatus
     var transcriptionModel: String?
@@ -38,6 +39,10 @@ struct Recording: Codable, Identifiable {
     var transcriptionURL: URL? {
         guard let name = transcriptionFileName else { return nil }
         return folderURL.appendingPathComponent(name)
+    }
+
+    var speakerNamesURL: URL {
+        folderURL.appendingPathComponent("speaker_names.json")
     }
 
     var formattedDuration: String {

@@ -5,7 +5,8 @@ import ScreenCaptureKit
 
 @MainActor
 final class AudioRecorder: NSObject, ObservableObject {
-    var onAudioLevel: ((Float) -> Void)?
+    var onMicLevel: ((Float) -> Void)?
+    var onSystemLevel: ((Float) -> Void)?
 
     @Published private(set) var isRecording = false
 
@@ -313,6 +314,8 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func handleSystemAudio(_ sampleBuffer: CMSampleBuffer) {
+        computeSystemLevel(sampleBuffer)
+
         writeLock.lock()
         defer { writeLock.unlock() }
 
@@ -397,7 +400,33 @@ final class AudioRecorder: NSObject, ObservableObject {
         let rms = sqrtf(sumOfSquares / Float(frames))
         let db = 20 * log10f(max(rms, 1e-7))
         let normalized = max(0, min(1, (db + 60) / 60))
-        onAudioLevel?(normalized)
+        onMicLevel?(normalized)
+    }
+
+    private func computeSystemLevel(_ sampleBuffer: CMSampleBuffer) {
+        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
+        let length = CMBlockBufferGetDataLength(blockBuffer)
+        guard length > 0 else { return }
+
+        var dataPointer: UnsafeMutablePointer<Int8>?
+        var lengthAtOffset: Int = 0
+        let status = CMBlockBufferGetDataPointer(blockBuffer, atOffset: 0, lengthAtOffsetOut: &lengthAtOffset, totalLengthOut: nil, dataPointerOut: &dataPointer)
+        guard status == kCMBlockBufferNoErr, let ptr = dataPointer else { return }
+
+        // Audio is float32
+        let floatCount = lengthAtOffset / MemoryLayout<Float>.size
+        guard floatCount > 0 else { return }
+        let floatPtr = UnsafeRawPointer(ptr).bindMemory(to: Float.self, capacity: floatCount)
+
+        var sumOfSquares: Float = 0
+        for i in 0..<floatCount {
+            sumOfSquares += floatPtr[i] * floatPtr[i]
+        }
+
+        let rms = sqrtf(sumOfSquares / Float(floatCount))
+        let db = 20 * log10f(max(rms, 1e-7))
+        let normalized = max(0, min(1, (db + 60) / 60))
+        onSystemLevel?(normalized)
     }
 }
 
