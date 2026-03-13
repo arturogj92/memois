@@ -323,7 +323,11 @@ struct MainWindowView: View {
             )
             .onChange(of: searchText) { displayLimit = 10 }
 
-            if filteredRecordings.isEmpty {
+            if model.isSavingRecording {
+                savingSkeletonRow()
+            }
+
+            if filteredRecordings.isEmpty && !model.isSavingRecording {
                 VStack(spacing: 8) {
                     Text(searchText.isEmpty ? "No recordings yet" : "No results")
                         .font(.system(size: 13, weight: .medium))
@@ -331,7 +335,7 @@ struct MainWindowView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 50)
-            } else {
+            } else if !filteredRecordings.isEmpty {
                 LazyVStack(spacing: 8) {
                     ForEach(visibleRecordings) { recording in
                         recordingRow(recording)
@@ -539,6 +543,45 @@ struct MainWindowView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.surfaceCard)
         )
+    }
+
+    private func savingSkeletonRow() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(.white.opacity(0.08))
+                    .frame(width: 140, height: 14)
+
+                Spacer()
+
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(.white.opacity(0.06))
+                    .frame(width: 50, height: 12)
+            }
+
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(.white.opacity(0.06))
+                    .frame(width: 100, height: 12)
+
+                Spacer()
+
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+
+                Text("Saving…")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.surfaceCard)
+        )
+        .opacity(0.7)
+        .shimmering()
     }
 
     private func statusBadge(for status: Recording.TranscriptionStatus) -> some View {
@@ -1139,5 +1182,35 @@ struct MainWindowView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.surfaceCard)
         )
+    }
+}
+
+// MARK: - Shimmer effect
+
+private struct ShimmerModifier: ViewModifier {
+    @State private var phase: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                LinearGradient(
+                    colors: [.clear, .white.opacity(0.08), .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .offset(x: phase)
+                .mask(content)
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                    phase = 400
+                }
+            }
+    }
+}
+
+extension View {
+    func shimmering() -> some View {
+        modifier(ShimmerModifier())
     }
 }

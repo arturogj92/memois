@@ -27,6 +27,7 @@ final class AppModel: ObservableObject {
     @Published var recordings: [Recording]
     @Published private(set) var activeTranscription: TranscriptionProgress = .none
     @Published var recordingName = ""
+    @Published private(set) var isSavingRecording = false
 
     let settings: SettingsStore
     let transcriptionStats = TranscriptionStatsStore()
@@ -182,6 +183,7 @@ final class AppModel: ObservableObject {
         let duration = recordingDuration
         sessionState = .idle
         statusMessage = "Saving recording..."
+        isSavingRecording = true
 
         if settings.soundEffectsEnabled {
             soundPlayer.play(.recordingStopped, soundName: settings.stopRecordingSound)
@@ -190,6 +192,7 @@ final class AppModel: ObservableObject {
         Task {
             guard let url = await audioRecorder.stop() else {
                 statusMessage = "Recording failed"
+                isSavingRecording = false
                 return
             }
 
@@ -208,6 +211,7 @@ final class AppModel: ObservableObject {
 
             recordings.insert(recording, at: 0)
             recordingStore.save(recordings)
+            isSavingRecording = false
             statusMessage = "Recording saved"
             micLevel = 0
             systemLevel = 0
