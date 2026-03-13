@@ -37,6 +37,9 @@ struct RecordingDetailView: View {
                     .keyboardShortcut(.cancelAction)
             }
 
+            // Audio player
+            AudioPlayerView(audioURL: recording.audioURL)
+
             // Speaker renaming section
             if !detectedSpeakers.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -121,7 +124,7 @@ struct RecordingDetailView: View {
             }
         }
         .padding(24)
-        .frame(width: 560, height: 520)
+        .frame(width: 560, height: 640)
         .background(Color.surfaceBase)
         .onAppear {
             rawTranscript = model.readTranscript(for: recording) ?? ""
