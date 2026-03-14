@@ -321,7 +321,7 @@ struct MainWindowView: View {
 
                 Button {
                     let panel = NSOpenPanel()
-                    panel.allowedContentTypes = [.audio, .mpeg4Audio, .mp3, .wav, .aiff]
+                    panel.allowedContentTypes = [.audio, .movie]
                     panel.allowsMultipleSelection = false
                     panel.canChooseDirectories = false
                     panel.message = "Select an audio file to import"

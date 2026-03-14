@@ -82,6 +82,20 @@ final class AppModel: ObservableObject {
 
     func refreshPermissions() {
         permissionStatus = permissions.currentStatus()
+
+        if !permissionStatus.microphoneGranted {
+            sessionState = .error("Microphone access required")
+            statusMessage = "Microphone access required"
+        } else if !permissionStatus.screenRecordingGranted {
+            sessionState = .error("Screen Recording permission required")
+            statusMessage = "Screen Recording permission required"
+        } else if !permissionStatus.inputMonitoringGranted {
+            sessionState = .error("Input Monitoring required")
+            statusMessage = "Input Monitoring required"
+        } else if case .error = sessionState {
+            sessionState = .idle
+            statusMessage = "Ready"
+        }
     }
 
     func requestMicrophonePermission() {
@@ -124,25 +138,10 @@ final class AppModel: ObservableObject {
 
     private func ensureReadyForRecording() -> Bool {
         refreshPermissions()
-
-        guard permissionStatus.microphoneGranted else {
-            fail(with: "Microphone access required")
+        if case .error = sessionState {
             showMainWindow?()
             return false
         }
-
-        guard permissionStatus.screenRecordingGranted else {
-            fail(with: "Screen Recording permission required")
-            showMainWindow?()
-            return false
-        }
-
-        guard permissionStatus.inputMonitoringGranted else {
-            fail(with: "Input Monitoring required for global shortcut")
-            showMainWindow?()
-            return false
-        }
-
         return true
     }
 
