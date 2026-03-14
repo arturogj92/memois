@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Combine
 import Foundation
 
@@ -125,19 +126,19 @@ final class AppModel: ObservableObject {
         refreshPermissions()
 
         guard permissionStatus.microphoneGranted else {
-            statusMessage = "Microphone access required"
+            fail(with: "Microphone access required")
             showMainWindow?()
             return false
         }
 
         guard permissionStatus.screenRecordingGranted else {
-            statusMessage = "Screen Recording permission required for system audio"
+            fail(with: "Screen Recording permission required")
             showMainWindow?()
             return false
         }
 
         guard permissionStatus.inputMonitoringGranted else {
-            statusMessage = "Input Monitoring required for global shortcut"
+            fail(with: "Input Monitoring required for global shortcut")
             showMainWindow?()
             return false
         }
@@ -293,6 +294,44 @@ final class AppModel: ObservableObject {
                 recordingStore.save(recordings)
                 statusMessage = "Transcription failed: \(error.localizedDescription)"
             }
+        }
+    }
+
+    func importAudio(from sourceURL: URL) {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let folderName = dateFormatter.string(from: Date())
+        let folderURL = Recording.recordingsDirectory.appendingPathComponent(folderName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+
+        let destFileName = "recording.\(sourceURL.pathExtension.lowercased())"
+        let destURL = folderURL.appendingPathComponent(destFileName)
+
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+
+            // Get audio duration
+            let asset = AVURLAsset(url: destURL)
+            let duration = Double(CMTimeGetSeconds(asset.duration))
+
+            let recording = Recording(
+                id: UUID(),
+                createdAt: Date(),
+                durationSeconds: duration > 0 ? duration : 0,
+                audioFileName: destFileName,
+                folderName: folderName,
+                name: sourceURL.deletingPathExtension().lastPathComponent,
+                transcriptionFileName: nil,
+                transcriptionStatus: .none,
+                transcriptionModel: nil,
+                speakerCount: nil
+            )
+
+            recordings.insert(recording, at: 0)
+            recordingStore.save(recordings)
+            statusMessage = "Audio imported"
+        } catch {
+            statusMessage = "Import failed: \(error.localizedDescription)"
         }
     }
 
