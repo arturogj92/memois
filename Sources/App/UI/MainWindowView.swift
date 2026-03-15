@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Brand palette (from icon gradient)
 
@@ -294,6 +295,57 @@ struct MainWindowView: View {
                     }
                     .controlSize(.small)
                 }
+            }
+
+            // Actions
+            HStack(spacing: 8) {
+                Button {
+                    model.handleShortcutPressed()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: model.sessionState == .recording ? "stop.fill" : "circle.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(model.sessionState == .recording ? .white : .red)
+                        Text(model.sessionState == .recording ? "Stop" : "Record")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(.white.opacity(0.8))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(model.sessionState == .recording ? Color.brandPink.opacity(0.3) : .white.opacity(0.08))
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.audio, .movie]
+                    panel.allowsMultipleSelection = false
+                    panel.canChooseDirectories = false
+                    panel.message = "Select an audio file to import"
+                    if panel.runModal() == .OK, let url = panel.url {
+                        model.importAudio(from: url)
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10))
+                        Text("Import Audio")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(.white.opacity(0.8))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(.white.opacity(0.08))
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
             }
 
             // Search
