@@ -763,6 +763,55 @@ struct MainWindowView: View {
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(.white)
 
+            // General
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("General")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Start at login")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.7))
+                            Text("Launch Memois automatically when you log in")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.3))
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { settings.startAtLogin },
+                            set: { settings.startAtLogin = $0 }
+                        ))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .controlSize(.small)
+                    }
+
+                    Divider().opacity(0.3)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Hide Dock icon")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.7))
+                            Text("Only show in the menu bar")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.3))
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { settings.hideDockIcon },
+                            set: { settings.hideDockIcon = $0 }
+                        ))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .controlSize(.small)
+                    }
+                }
+            }
+
             // API Key
             card {
                 VStack(alignment: .leading, spacing: 8) {

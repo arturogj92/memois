@@ -52,11 +52,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        applyActivationPolicy()
         shortcutMonitor.start()
         configureStatusItem()
         model.refreshPermissions()
         presentMainWindow()
+
+        model.settings.$hideDockIcon
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.applyActivationPolicy() }
+            .store(in: &cancellables)
+    }
+
+    private func applyActivationPolicy() {
+        NSApp.setActivationPolicy(model.settings.hideDockIcon ? .accessory : .regular)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

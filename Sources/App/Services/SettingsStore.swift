@@ -1,5 +1,6 @@
 import Foundation
 import Carbon.HIToolbox
+import ServiceManagement
 
 @MainActor
 final class SettingsStore: ObservableObject {
@@ -65,6 +66,17 @@ final class SettingsStore: ObservableObject {
         didSet { userDefaults.set(speakerDiarization, forKey: Keys.speakerDiarization) }
     }
 
+    @Published var startAtLogin: Bool {
+        didSet {
+            userDefaults.set(startAtLogin, forKey: Keys.startAtLogin)
+            applyLoginItem()
+        }
+    }
+
+    @Published var hideDockIcon: Bool {
+        didSet { userDefaults.set(hideDockIcon, forKey: Keys.hideDockIcon) }
+    }
+
     private let userDefaults: UserDefaults
 
     init(userDefaults: UserDefaults = .standard) {
@@ -87,6 +99,8 @@ final class SettingsStore: ObservableObject {
         self.floatingPanelY = userDefaults.object(forKey: Keys.floatingPanelY) as? Double
         self.transcriptionModel = userDefaults.string(forKey: Keys.transcriptionModel) ?? "best"
         self.speakerDiarization = userDefaults.object(forKey: Keys.speakerDiarization) as? Bool ?? true
+        self.startAtLogin = userDefaults.object(forKey: Keys.startAtLogin) as? Bool ?? false
+        self.hideDockIcon = userDefaults.object(forKey: Keys.hideDockIcon) as? Bool ?? false
     }
 
     var shortcutModifierFlags: CGEventFlags {
@@ -106,6 +120,14 @@ final class SettingsStore: ObservableObject {
     func resetFloatingPanelPosition() {
         floatingPanelX = nil
         floatingPanelY = nil
+    }
+
+    func applyLoginItem() {
+        if startAtLogin {
+            try? SMAppService.mainApp.register()
+        } else {
+            try? SMAppService.mainApp.unregister()
+        }
     }
 
     static let defaultModifierFlags: CGEventFlags = [.maskShift, .maskAlternate]
@@ -131,4 +153,6 @@ private enum Keys {
     static let floatingPanelY = "settings.floatingPanelY"
     static let transcriptionModel = "settings.transcriptionModel"
     static let speakerDiarization = "settings.speakerDiarization"
+    static let startAtLogin = "settings.startAtLogin"
+    static let hideDockIcon = "settings.hideDockIcon"
 }
