@@ -13,7 +13,7 @@ struct MemoisApp: App {
 
     var body: some Scene {
         WindowGroup("Memois") {
-            MainWindowView(model: appDelegate.model, settings: appDelegate.model.settings)
+            MainWindowView(model: appDelegate.model, settings: appDelegate.model.settings, updater: updaterController.updater)
                 .frame(minWidth: 620, minHeight: 720)
         }
         .defaultPosition(.center)

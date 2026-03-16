@@ -1,3 +1,4 @@
+import Sparkle
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -25,6 +26,7 @@ private let brandGradient = LinearGradient(
 struct MainWindowView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: SettingsStore
+    let updater: SPUUpdater
     @State private var selectedTab: SidebarTab = .recordings
     @State private var isRecordingShortcut = false
     @State private var availableDevices: [AudioDevice] = []
@@ -1093,6 +1095,38 @@ struct MainWindowView: View {
                             }
                             .controlSize(.small)
                         }
+                    }
+                }
+            }
+
+            // Updates
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Updates")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Check for updates")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.7))
+                            Text("Download and install the latest version")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.3))
+                        }
+                        Spacer()
+                        Button {
+                            updater.checkForUpdates()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 10))
+                                Text("Check Now")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                        }
+                        .controlSize(.small)
                     }
                 }
             }

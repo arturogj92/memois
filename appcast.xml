@@ -7,6 +7,25 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.5.1</title>
+            <description><![CDATA[
+<h2>What's New in 0.5.1</h2>
+<ul>
+    <li><strong>Check for Updates in Settings</strong> — New button in Settings to check for and install updates</li>
+</ul>
+            ]]></description>
+            <pubDate>Sun, 16 Mar 2026 17:00:00 +0100</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.5.1/Memois-v0.5.1-macOS.zip"
+                sparkle:version="1"
+                sparkle:shortVersionString="0.5.1"
+                length="3254566"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.5.0</title>
             <description><![CDATA[
 <h2>What's New in 0.5.0</h2>
