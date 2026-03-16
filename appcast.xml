@@ -18,9 +18,9 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure
                 url="https://github.com/arturogj92/memois/releases/download/v0.5.1/Memois-v0.5.1-macOS.zip"
-                sparkle:version="1"
+                sparkle:version="2"
                 sparkle:shortVersionString="0.5.1"
-                length="3254566"
+                length="3254634"
                 type="application/octet-stream"
             />
         </item>
