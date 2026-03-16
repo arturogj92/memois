@@ -144,38 +144,56 @@ final class AudioRecorder: NSObject, ObservableObject {
         chunkTimer?.invalidate()
         chunkTimer = nil
 
-        micEngine?.inputNode.removeTap(onBus: 0)
-        micEngine?.stop()
+        // Snapshot all mutable state BEFORE any await points.
+        // A new start() can run during suspension and overwrite instance properties.
+        let stoppingStream = scStream
+        let stoppingEngine = micEngine
+        let stoppingFolder = recordingFolder
+        var stoppingChunks = chunkURLs
+
+        // Clear non-locked instance state so a new start() gets a clean slate
+        scStream = nil
         micEngine = nil
-
-        if let stream = scStream {
-            try? await stream.stopCapture()
-            scStream = nil
-        }
         streamOutput = nil
+        chunkURLs = []
 
-        // Finalize last chunk
-        systemAudioInput?.markAsFinished()
-        micAudioInput?.markAsFinished()
-        await withCheckedContinuation { continuation in
-            assetWriter?.finishWriting {
-                continuation.resume()
-            }
-        }
-        if let url = outputURL {
-            chunkURLs.append(url)
-        }
-
-        // Merge all chunks and mix both tracks into one file
-        let finalURL = await mergeChunks()
-
+        // Snapshot and clear writer state under lock (accessed by audio threads)
+        writeLock.lock()
+        let stoppingWriter = assetWriter
+        let stoppingSysInput = systemAudioInput
+        let stoppingMicInput = micAudioInput
+        let stoppingOutputURL = outputURL
         assetWriter = nil
         systemAudioInput = nil
         micAudioInput = nil
         outputURL = nil
         sysStartTime = nil
         micStartTime = nil
-        // Keep recordingFolder/recordingFolderName alive until AppModel reads them
+        writeLock.unlock()
+
+        stoppingEngine?.inputNode.removeTap(onBus: 0)
+        stoppingEngine?.stop()
+
+        if let stream = stoppingStream {
+            try? await stream.stopCapture()
+        }
+
+        // Finalize last chunk using captured references
+        stoppingSysInput?.markAsFinished()
+        stoppingMicInput?.markAsFinished()
+        if let writer = stoppingWriter {
+            await withCheckedContinuation { continuation in
+                writer.finishWriting {
+                    continuation.resume()
+                }
+            }
+        }
+        if let url = stoppingOutputURL {
+            stoppingChunks.append(url)
+        }
+
+        // Merge all chunks and mix both tracks into one file
+        let finalURL = await mergeChunks(chunks: stoppingChunks, folder: stoppingFolder)
 
         return finalURL
     }
@@ -252,8 +270,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func mergeChunks() async -> URL? {
-        guard !chunkURLs.isEmpty, let folder = recordingFolder else { return nil }
+    private func mergeChunks(chunks: [URL], folder: URL?) async -> URL? {
+        guard !chunks.isEmpty, let folder = folder else { return nil }
 
         let finalURL = folder.appendingPathComponent("recording.m4a")
 
@@ -266,10 +284,10 @@ final class AudioRecorder: NSObject, ObservableObject {
         let micCompTrack = composition.addMutableTrack(
             withMediaType: .audio,
             preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else { return chunkURLs.first }
+        ) else { return chunks.first }
 
         var currentTime = CMTime.zero
-        for chunkURL in chunkURLs {
+        for chunkURL in chunks {
             let asset = AVURLAsset(url: chunkURL)
             do {
                 let tracks = try await asset.loadTracks(withMediaType: .audio)
@@ -294,7 +312,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         guard let exportSession = AVAssetExportSession(
             asset: composition,
             presetName: AVAssetExportPresetAppleM4A
-        ) else { return chunkURLs.first }
+        ) else { return chunks.first }
 
         exportSession.outputURL = finalURL
         exportSession.outputFileType = .m4a
@@ -302,14 +320,13 @@ final class AudioRecorder: NSObject, ObservableObject {
         await exportSession.export()
 
         if exportSession.status == .completed {
-            for url in chunkURLs {
+            for url in chunks {
                 try? FileManager.default.removeItem(at: url)
             }
-            chunkURLs = []
             return finalURL
         } else {
             // Merge failed - keep chunks as fallback
-            return chunkURLs.first
+            return chunks.first
         }
     }
 

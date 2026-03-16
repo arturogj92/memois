@@ -45,6 +45,23 @@ struct Recording: Codable, Identifiable {
         folderURL.appendingPathComponent("speaker_names.json")
     }
 
+    /// True when the audio file is missing but chunk files exist in the folder
+    var needsRepair: Bool {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: audioURL.path) else { return false }
+        return !chunkURLs.isEmpty
+    }
+
+    /// Sorted chunk files found in this recording's folder
+    var chunkURLs: [URL] {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: folderURL, includingPropertiesForKeys: nil
+        ) else { return [] }
+        return contents
+            .filter { $0.lastPathComponent.hasPrefix("chunk") && $0.pathExtension == "m4a" }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
     var formattedDuration: String {
         let minutes = Int(durationSeconds) / 60
         let seconds = Int(durationSeconds) % 60

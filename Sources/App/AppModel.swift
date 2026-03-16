@@ -146,6 +146,7 @@ final class AppModel: ObservableObject {
     }
 
     private func startRecording() {
+        guard !isSavingRecording else { return }
         sessionState = .recording
         statusMessage = "Recording..."
         recordingStartedAt = Date()
@@ -201,7 +202,7 @@ final class AppModel: ObservableObject {
                 createdAt: Date(),
                 durationSeconds: duration,
                 audioFileName: url.lastPathComponent,
-                folderName: audioRecorder.recordingFolderName,
+                folderName: url.deletingLastPathComponent().lastPathComponent,
                 name: recordingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : recordingName.trimmingCharacters(in: .whitespacesAndNewlines),
                 transcriptionFileName: nil,
                 transcriptionStatus: .none,
@@ -384,6 +385,92 @@ final class AppModel: ObservableObject {
         guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
         recordings[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : name.trimmingCharacters(in: .whitespacesAndNewlines)
         recordingStore.save(recordings)
+    }
+
+    // MARK: - Repair
+
+    func repairRecording(id: UUID) {
+        guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
+        let recording = recordings[index]
+        let chunks = recording.chunkURLs
+        guard !chunks.isEmpty else {
+            statusMessage = "No chunks found to repair"
+            return
+        }
+
+        statusMessage = "Repairing recording..."
+
+        Task {
+            let finalURL = recording.folderURL.appendingPathComponent("recording.m4a")
+
+            let composition = AVMutableComposition()
+            guard let sysTrackComp = composition.addMutableTrack(
+                withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid
+            ),
+            let micTrackComp = composition.addMutableTrack(
+                withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid
+            ) else {
+                statusMessage = "Repair failed: could not create composition"
+                return
+            }
+
+            var currentTime = CMTime.zero
+            for chunkURL in chunks {
+                let asset = AVURLAsset(url: chunkURL)
+                do {
+                    let tracks = try await asset.loadTracks(withMediaType: .audio)
+                    let duration = try await asset.load(.duration)
+                    let range = CMTimeRange(start: .zero, duration: duration)
+                    if let sys = tracks.first {
+                        try sysTrackComp.insertTimeRange(range, of: sys, at: currentTime)
+                    }
+                    if tracks.count > 1 {
+                        try micTrackComp.insertTimeRange(range, of: tracks[1], at: currentTime)
+                    }
+                    currentTime = CMTimeAdd(currentTime, duration)
+                } catch {
+                    continue
+                }
+            }
+
+            guard let exportSession = AVAssetExportSession(
+                asset: composition, presetName: AVAssetExportPresetAppleM4A
+            ) else {
+                statusMessage = "Repair failed: export not available"
+                return
+            }
+
+            exportSession.outputURL = finalURL
+            exportSession.outputFileType = .m4a
+            await exportSession.export()
+
+            guard exportSession.status == .completed else {
+                statusMessage = "Repair failed: \(exportSession.error?.localizedDescription ?? "export error")"
+                return
+            }
+
+            // Clean up chunks
+            for url in chunks {
+                try? FileManager.default.removeItem(at: url)
+            }
+
+            // Update recording metadata
+            guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
+            recordings[index] = Recording(
+                id: recording.id,
+                createdAt: recording.createdAt,
+                durationSeconds: CMTimeGetSeconds(currentTime),
+                audioFileName: "recording.m4a",
+                folderName: recording.folderName,
+                name: recording.name,
+                transcriptionFileName: recording.transcriptionFileName,
+                transcriptionStatus: recording.transcriptionStatus == .failed ? .none : recording.transcriptionStatus,
+                transcriptionModel: recording.transcriptionModel,
+                speakerCount: recording.speakerCount
+            )
+            recordingStore.save(recordings)
+            statusMessage = "Recording repaired"
+        }
     }
 
     func showInFinder(recording: Recording) {

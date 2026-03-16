@@ -522,6 +522,27 @@ struct MainWindowView: View {
 
                 Spacer()
 
+                if recording.needsRepair {
+                    Button {
+                        model.repairRecording(id: recording.id)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "wrench")
+                                .font(.system(size: 10))
+                            Text("Repair")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.white.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.brandYellow.opacity(0.2))
+                    )
+                }
+
                 if recording.transcriptionStatus == .none || recording.transcriptionStatus == .failed {
                     Button {
                         model.transcribe(recordingID: recording.id)

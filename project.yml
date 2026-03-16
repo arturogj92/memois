@@ -14,9 +14,13 @@ settings:
     DEVELOPMENT_TEAM: ZC8MCRVRBP
     CODE_SIGN_IDENTITY: "Developer ID Application: Arturo García Jurado (ZC8MCRVRBP)"
     CURRENT_PROJECT_VERSION: 1
-    MARKETING_VERSION: 0.1.0
+    MARKETING_VERSION: 0.5.0
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     ENABLE_APP_SANDBOX: NO
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.9.0
 targets:
   Memois:
     type: application
@@ -24,6 +28,8 @@ targets:
     sources:
       - path: Sources/App
       - path: Resources/Assets.xcassets
+    dependencies:
+      - package: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vzgb9jp.memois

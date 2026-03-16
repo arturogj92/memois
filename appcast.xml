@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>Memois Updates</title>
+        <link>https://github.com/arturogj92/memois</link>
+        <description>Automatic updates for Memois</description>
+        <language>en</language>
+
+        <item>
+            <title>Version 0.5.0</title>
+            <description><![CDATA[
+<h2>What's New in 0.5.0</h2>
+<ul>
+    <li><strong>Auto-update support</strong> — Memois now checks for updates automatically using Sparkle</li>
+    <li><strong>Repair button</strong> — Recover recordings when chunks exist but the merged audio file is missing</li>
+    <li><strong>Fix: recording file not found</strong> — Fixed race condition when stopping and immediately starting a new recording</li>
+</ul>
+            ]]></description>
+            <pubDate>Sun, 16 Mar 2026 16:00:00 +0100</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.5.0/Memois-v0.5.0-macOS.zip"
+                sparkle:version="1"
+                sparkle:shortVersionString="0.5.0"
+                length="3250082"
+                type="application/octet-stream"
+            />
+        </item>
+    </channel>
+</rss>
