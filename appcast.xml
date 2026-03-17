@@ -7,6 +7,29 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.6.0</title>
+            <description><![CDATA[
+<h2>What's New in 0.6.0</h2>
+<ul>
+    <li><strong>Screenshots during recording</strong> — Camera button + global shortcut (⌥⇧S) to capture screen regions while recording. Screenshots saved in the recording folder with timestamps.</li>
+    <li><strong>Transcript search</strong> — Search bar to find text in transcripts with match highlighting and navigation</li>
+    <li><strong>Audio-text sync</strong> — Click any utterance to jump the audio to that exact moment. Active utterance highlighted during playback.</li>
+    <li><strong>Timestamps per utterance</strong> — Each speaker turn shows its timestamp for easy navigation</li>
+    <li><strong>Enhanced Copy</strong> — Copied transcript now includes recording title and screenshot file paths</li>
+</ul>
+            ]]></description>
+            <pubDate>Tue, 17 Mar 2026 18:48:10 +0100</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.6.0/Memois-v0.6.0-macOS.zip"
+                sparkle:version="3"
+                sparkle:shortVersionString="0.6.0"
+                length="3372422"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.5.1</title>
             <description><![CDATA[
 <h2>What's New in 0.5.1</h2>

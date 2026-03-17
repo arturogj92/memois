@@ -20,6 +20,18 @@ final class SettingsStore: ObservableObject {
         didSet { userDefaults.set(shortcutDescription, forKey: Keys.shortcutDescription) }
     }
 
+    @Published var screenshotShortcutKeyCode: Int {
+        didSet { userDefaults.set(screenshotShortcutKeyCode, forKey: Keys.screenshotShortcutKeyCode) }
+    }
+
+    @Published var screenshotShortcutModifierFlagsRawValue: UInt64 {
+        didSet { userDefaults.set(screenshotShortcutModifierFlagsRawValue, forKey: Keys.screenshotShortcutModifierFlagsRawValue) }
+    }
+
+    @Published var screenshotShortcutDescription: String {
+        didSet { userDefaults.set(screenshotShortcutDescription, forKey: Keys.screenshotShortcutDescription) }
+    }
+
     @Published var selectedMicrophoneUID: String? {
         didSet { userDefaults.set(selectedMicrophoneUID, forKey: Keys.selectedMicrophoneUID) }
     }
@@ -89,6 +101,12 @@ final class SettingsStore: ObservableObject {
             keyCode: kVK_ANSI_R,
             modifiers: SettingsStore.defaultModifierFlags
         )
+        self.screenshotShortcutKeyCode = userDefaults.object(forKey: Keys.screenshotShortcutKeyCode) as? Int ?? kVK_ANSI_S
+        self.screenshotShortcutModifierFlagsRawValue = userDefaults.object(forKey: Keys.screenshotShortcutModifierFlagsRawValue) as? UInt64 ?? SettingsStore.defaultModifierFlags.rawValue
+        self.screenshotShortcutDescription = userDefaults.string(forKey: Keys.screenshotShortcutDescription) ?? ShortcutFormatter.description(
+            keyCode: kVK_ANSI_S,
+            modifiers: SettingsStore.defaultModifierFlags
+        )
         self.selectedMicrophoneUID = userDefaults.string(forKey: Keys.selectedMicrophoneUID)
         self.soundEffectsEnabled = userDefaults.object(forKey: Keys.soundEffectsEnabled) as? Bool ?? true
         self.startRecordingSound = userDefaults.string(forKey: Keys.startRecordingSound) ?? "Frog"
@@ -117,6 +135,20 @@ final class SettingsStore: ObservableObject {
         updateShortcut(keyCode: kVK_ANSI_R, modifierFlags: Self.defaultModifierFlags)
     }
 
+    var screenshotShortcutModifierFlags: CGEventFlags {
+        CGEventFlags(rawValue: screenshotShortcutModifierFlagsRawValue)
+    }
+
+    func updateScreenshotShortcut(keyCode: Int, modifierFlags: CGEventFlags) {
+        screenshotShortcutKeyCode = keyCode
+        screenshotShortcutModifierFlagsRawValue = modifierFlags.rawValue
+        screenshotShortcutDescription = ShortcutFormatter.description(keyCode: keyCode, modifiers: modifierFlags)
+    }
+
+    func resetScreenshotShortcutToDefault() {
+        updateScreenshotShortcut(keyCode: kVK_ANSI_S, modifierFlags: Self.defaultModifierFlags)
+    }
+
     func resetFloatingPanelPosition() {
         floatingPanelX = nil
         floatingPanelY = nil
@@ -143,6 +175,9 @@ private enum Keys {
     static let shortcutKeyCode = "settings.shortcutKeyCode"
     static let shortcutModifierFlagsRawValue = "settings.shortcutModifierFlagsRawValue"
     static let shortcutDescription = "settings.shortcutDescription"
+    static let screenshotShortcutKeyCode = "settings.screenshotShortcutKeyCode"
+    static let screenshotShortcutModifierFlagsRawValue = "settings.screenshotShortcutModifierFlagsRawValue"
+    static let screenshotShortcutDescription = "settings.screenshotShortcutDescription"
     static let selectedMicrophoneUID = "settings.selectedMicrophoneUID"
     static let soundEffectsEnabled = "settings.soundEffectsEnabled"
     static let startRecordingSound = "settings.startRecordingSound"

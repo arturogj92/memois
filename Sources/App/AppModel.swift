@@ -29,6 +29,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var activeTranscription: TranscriptionProgress = .none
     @Published var recordingName = ""
     @Published private(set) var isSavingRecording = false
+    @Published private(set) var screenshotCount = 0
 
     let settings: SettingsStore
     let transcriptionStats = TranscriptionStatsStore()
@@ -44,6 +45,8 @@ final class AppModel: ObservableObject {
     private let soundPlayer = SoundEffectPlayer()
     private var recordingStartedAt: Date?
     private var durationTimer: Timer?
+    private var currentScreenshots: [Screenshot] = []
+    private var screenshotWindow: ScreenshotSelectionWindow?
 
     init(
         settings: SettingsStore,
@@ -152,6 +155,8 @@ final class AppModel: ObservableObject {
         recordingStartedAt = Date()
         recordingDuration = 0
         recordingName = ""
+        currentScreenshots = []
+        screenshotCount = 0
         showFloatingPanel?()
 
         if settings.soundEffectsEnabled {
@@ -271,6 +276,24 @@ final class AppModel: ObservableObject {
                 let txtURL = recording.folderURL.appendingPathComponent(txtFileName)
                 try formatted.write(to: txtURL, atomically: true, encoding: .utf8)
 
+                // Save structured utterance data with timestamps
+                if let utterances = result.utterances, !utterances.isEmpty {
+                    let transcriptUtterances = utterances.map { u in
+                        TranscriptUtterance(
+                            id: UUID(),
+                            speaker: u.speaker,
+                            text: u.text,
+                            startMs: u.start,
+                            endMs: u.end
+                        )
+                    }
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                    if let data = try? encoder.encode(transcriptUtterances) {
+                        try? data.write(to: recording.utterancesURL, options: .atomic)
+                    }
+                }
+
                 // Update recording
                 guard let index = recordings.firstIndex(where: { $0.id == recordingID }) else { return }
                 recordings[index].transcriptionStatus = .completed
@@ -381,6 +404,44 @@ final class AppModel: ObservableObject {
         return result
     }
 
+    /// Builds the full copyable text: title + transcript (with speaker names) + screenshot references
+    func buildCopyText(for recording: Recording) -> String? {
+        let rawTranscript = readTranscript(for: recording)
+        let speakerNames = loadSpeakerNames(for: recording)
+        let screenshots = loadScreenshots(for: recording)
+
+        let hasTranscript = rawTranscript != nil && !rawTranscript!.isEmpty
+        let hasScreenshots = !screenshots.isEmpty
+
+        guard hasTranscript || hasScreenshots else { return nil }
+
+        var parts: [String] = []
+
+        // Title at the top
+        if let name = recording.name, !name.isEmpty {
+            parts.append("# \(name)")
+            parts.append("")
+        }
+
+        // Transcript body with speaker names applied
+        if let raw = rawTranscript, !raw.isEmpty {
+            parts.append(applyingSpeakerNames(speakerNames, to: raw))
+        }
+
+        // Screenshot references at the end
+        if hasScreenshots {
+            parts.append("")
+            parts.append("---")
+            parts.append("Screenshots:")
+            for screenshot in screenshots {
+                let url = recording.screenshotURL(for: screenshot)
+                parts.append("[\(screenshot.formattedTimestamp)] \(url.path)")
+            }
+        }
+
+        return parts.joined(separator: "\n")
+    }
+
     func renameRecording(id: UUID, name: String) {
         guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
         recordings[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -471,6 +532,74 @@ final class AppModel: ObservableObject {
             recordingStore.save(recordings)
             statusMessage = "Recording repaired"
         }
+    }
+
+    // MARK: - Screenshots
+
+    func captureScreenshot() {
+        guard sessionState == .recording else { return }
+        guard let screen = NSScreen.main else { return }
+
+        let timestamp = recordingDuration
+
+        let window = ScreenshotSelectionWindow(screen: screen)
+        window.onCapture = { [weak self] image in
+            guard let self else { return }
+            Task { @MainActor in
+                self.saveScreenshot(image, at: timestamp)
+                self.screenshotWindow = nil
+            }
+        }
+        screenshotWindow = window
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func saveScreenshot(_ image: NSImage, at timestamp: TimeInterval) {
+        guard let folderName = audioRecorder.recordingFolderName else { return }
+        let folderURL = Recording.recordingsDirectory.appendingPathComponent(folderName, isDirectory: true)
+
+        let index = currentScreenshots.count
+        let minutes = Int(timestamp) / 60
+        let seconds = Int(timestamp) % 60
+        let filename = String(format: "screenshot_%02d_%dm%02ds.png", index, minutes, seconds)
+
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else { return }
+
+        let fileURL = folderURL.appendingPathComponent(filename)
+        try? pngData.write(to: fileURL, options: .atomic)
+
+        let screenshot = Screenshot(id: UUID(), filename: filename, timestamp: timestamp)
+        currentScreenshots.append(screenshot)
+        screenshotCount = currentScreenshots.count
+
+        // Persist screenshots metadata
+        saveScreenshots(currentScreenshots, to: folderURL)
+    }
+
+    private func saveScreenshots(_ screenshots: [Screenshot], to folderURL: URL) {
+        let url = folderURL.appendingPathComponent("screenshots.json")
+        guard let data = try? JSONEncoder().encode(screenshots) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    func loadUtterances(for recording: Recording) -> [TranscriptUtterance] {
+        let url = recording.utterancesURL
+        guard let data = try? Data(contentsOf: url),
+              let utterances = try? JSONDecoder().decode([TranscriptUtterance].self, from: data) else {
+            return []
+        }
+        return utterances
+    }
+
+    func loadScreenshots(for recording: Recording) -> [Screenshot] {
+        let url = recording.screenshotsURL
+        guard let data = try? Data(contentsOf: url),
+              let screenshots = try? JSONDecoder().decode([Screenshot].self, from: data) else {
+            return []
+        }
+        return screenshots.sorted { $0.timestamp < $1.timestamp }
     }
 
     func showInFinder(recording: Recording) {

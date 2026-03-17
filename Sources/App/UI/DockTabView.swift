@@ -103,7 +103,7 @@ struct DockTabView: View {
         .animation(.easeInOut(duration: 0.25), value: isExpanded)
     }
 
-    // MARK: - Compact recording pill (dot + timer + dual level dots)
+    // MARK: - Compact recording pill (dot + timer + screenshot + dual level dots)
 
     private var compactRecordingContent: some View {
         HStack(spacing: 6) {
@@ -120,6 +120,9 @@ struct DockTabView: View {
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.9))
 
+            // Screenshot button
+            screenshotButton
+
             // Dual level indicators
             VStack(spacing: 2) {
                 // Mic level dot
@@ -135,11 +138,39 @@ struct DockTabView: View {
         .frame(height: 18)
     }
 
-    // MARK: - Expanded: name field + stop button
+    // MARK: - Screenshot button
+
+    private var screenshotButton: some View {
+        Button {
+            model.captureScreenshot()
+        } label: {
+            ZStack {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.7))
+
+                if model.screenshotCount > 0 {
+                    Text("\(model.screenshotCount)")
+                        .font(.system(size: 7, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule()
+                                .fill(Color(red: 0.65, green: 0.55, blue: 0.98))
+                        )
+                        .offset(x: 8, y: -6)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Expanded: name field + screenshot + stop button
 
     private var expandedContent: some View {
         VStack(spacing: 8) {
-            // Top row: dot + timer + collapse arrow
+            // Top row: dot + timer + screenshot + collapse arrow
             HStack(spacing: 6) {
                 Circle()
                     .fill(Color.red)
@@ -155,6 +186,9 @@ struct DockTabView: View {
                     .foregroundStyle(.white.opacity(0.9))
 
                 Spacer()
+
+                // Screenshot button
+                screenshotButton
 
                 // Collapse chevron
                 Button {

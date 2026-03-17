@@ -8,10 +8,15 @@ private extension Color {
 
 struct AudioPlayerView: View {
     let audioURL: URL
-    @StateObject private var player = AudioPlayerService()
+    @ObservedObject var player: AudioPlayerService
     @State private var waveformSamples: [Float] = []
     @State private var isDragging = false
     @State private var dragFraction: Double = 0
+
+    init(audioURL: URL, player: AudioPlayerService? = nil) {
+        self.audioURL = audioURL
+        self.player = player ?? AudioPlayerService()
+    }
 
     private var progress: Double {
         guard player.duration > 0 else { return 0 }

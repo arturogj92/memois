@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var dockTabController: DockTabController!
     private var shortcutMonitor: GlobalShortcutMonitor!
+    private var screenshotShortcutMonitor: GlobalShortcutMonitor!
     private var statusItem: NSStatusItem!
     private var cancellables: Set<AnyCancellable> = []
 
@@ -31,12 +32,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         rebuildShortcutMonitor()
+        rebuildScreenshotShortcutMonitor()
 
         settings.$shortcutKeyCode
             .combineLatest(settings.$shortcutModifierFlagsRawValue)
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _, _ in self?.rebuildShortcutMonitor() }
+            .store(in: &cancellables)
+
+        settings.$screenshotShortcutKeyCode
+            .combineLatest(settings.$screenshotShortcutModifierFlagsRawValue)
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in self?.rebuildScreenshotShortcutMonitor() }
             .store(in: &cancellables)
 
         model.$sessionState
@@ -55,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         applyActivationPolicy()
         shortcutMonitor.start()
+        screenshotShortcutMonitor.start()
         configureStatusItem()
         model.refreshPermissions()
         presentMainWindow()
@@ -72,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         shortcutMonitor.stop()
+        screenshotShortcutMonitor.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -105,6 +116,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // No release handler — toggle mode
         if NSApp != nil { shortcutMonitor.start() }
+    }
+
+    private func rebuildScreenshotShortcutMonitor() {
+        screenshotShortcutMonitor?.stop()
+        screenshotShortcutMonitor = GlobalShortcutMonitor(
+            keyCode: model.settings.screenshotShortcutKeyCode,
+            requiredFlags: model.settings.screenshotShortcutModifierFlags
+        )
+        screenshotShortcutMonitor.onPress = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.model.captureScreenshot()
+            }
+        }
+        if NSApp != nil { screenshotShortcutMonitor.start() }
     }
 
     private func presentMainWindow() {

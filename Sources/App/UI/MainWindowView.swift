@@ -29,6 +29,7 @@ struct MainWindowView: View {
     let updater: SPUUpdater
     @State private var selectedTab: SidebarTab = .recordings
     @State private var isRecordingShortcut = false
+    @State private var isRecordingScreenshotShortcut = false
     @State private var availableDevices: [AudioDevice] = []
     @State private var searchText = ""
     @State private var displayLimit = 10
@@ -102,6 +103,15 @@ struct MainWindowView: View {
         .background(Color.surfaceBase)
         .sheet(isPresented: $isRecordingShortcut) {
             ShortcutRecorderSheet(settings: settings, isPresented: $isRecordingShortcut)
+        }
+        .sheet(isPresented: $isRecordingScreenshotShortcut) {
+            ShortcutRecorderSheet(
+                title: "Record Screenshot Shortcut",
+                currentDescription: settings.screenshotShortcutDescription,
+                onSave: { keyCode, flags in settings.updateScreenshotShortcut(keyCode: keyCode, modifierFlags: flags) },
+                onReset: { settings.resetScreenshotShortcutToDefault() },
+                isPresented: $isRecordingScreenshotShortcut
+            )
         }
         .sheet(item: $selectedRecording) { recording in
             RecordingDetailView(recording: recording, model: model)
@@ -564,7 +574,7 @@ struct MainWindowView: View {
 
                 if recording.transcriptionStatus == .completed {
                     Button {
-                        if let text = model.readTranscript(for: recording) {
+                        if let text = model.buildCopyText(for: recording) {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(text, forType: .string)
                         }
@@ -941,7 +951,7 @@ struct MainWindowView: View {
             // Shortcut
             card {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Shortcut")
+                    Text("Recording Shortcut")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.9))
                     HStack(spacing: 12) {
@@ -949,6 +959,24 @@ struct MainWindowView: View {
                         Spacer()
                         Button("Record") { isRecordingShortcut = true }
                         Button("Reset") { settings.resetShortcutToDefault() }
+                    }
+                }
+            }
+
+            // Screenshot Shortcut
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Screenshot Shortcut")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                    Text("Capture a screen region while recording")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.3))
+                    HStack(spacing: 12) {
+                        keycapRow(settings.screenshotShortcutDescription)
+                        Spacer()
+                        Button("Record") { isRecordingScreenshotShortcut = true }
+                        Button("Reset") { settings.resetScreenshotShortcutToDefault() }
                     }
                 }
             }

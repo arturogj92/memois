@@ -1,5 +1,38 @@
 import Foundation
 
+struct TranscriptUtterance: Codable, Identifiable {
+    let id: UUID
+    let speaker: String
+    let text: String
+    /// Start time in milliseconds
+    let startMs: Int
+    /// End time in milliseconds
+    let endMs: Int
+
+    var startSeconds: TimeInterval { Double(startMs) / 1000.0 }
+    var endSeconds: TimeInterval { Double(endMs) / 1000.0 }
+
+    var formattedStart: String {
+        let totalSeconds = startMs / 1000
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+struct Screenshot: Codable, Identifiable {
+    let id: UUID
+    let filename: String
+    /// Seconds into the recording when this screenshot was taken
+    let timestamp: TimeInterval
+
+    var formattedTimestamp: String {
+        let minutes = Int(timestamp) / 60
+        let seconds = Int(timestamp) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
 struct Recording: Codable, Identifiable {
     let id: UUID
     let createdAt: Date
@@ -43,6 +76,19 @@ struct Recording: Codable, Identifiable {
 
     var speakerNamesURL: URL {
         folderURL.appendingPathComponent("speaker_names.json")
+    }
+
+    var screenshotsURL: URL {
+        folderURL.appendingPathComponent("screenshots.json")
+    }
+
+    var utterancesURL: URL {
+        folderURL.appendingPathComponent("transcript_data.json")
+    }
+
+    /// Screenshot image URLs found in this recording's folder
+    func screenshotURL(for screenshot: Screenshot) -> URL {
+        folderURL.appendingPathComponent(screenshot.filename)
     }
 
     /// True when the audio file is missing but chunk files exist in the folder

@@ -3,27 +3,55 @@ import CoreGraphics
 import SwiftUI
 
 struct ShortcutRecorderSheet: View {
-    @ObservedObject var settings: SettingsStore
+    let title: String
+    let currentDescription: String
+    let onSave: (Int, CGEventFlags) -> Void
+    let onReset: () -> Void
     @Binding var isPresented: Bool
 
     @State private var eventMonitor: Any?
     @State private var helperText = "Press the new shortcut now"
 
+    init(
+        settings: SettingsStore,
+        isPresented: Binding<Bool>
+    ) {
+        self.title = "Record Shortcut"
+        self.currentDescription = settings.shortcutDescription
+        self.onSave = { keyCode, flags in settings.updateShortcut(keyCode: keyCode, modifierFlags: flags) }
+        self.onReset = { settings.resetShortcutToDefault() }
+        self._isPresented = isPresented
+    }
+
+    init(
+        title: String,
+        currentDescription: String,
+        onSave: @escaping (Int, CGEventFlags) -> Void,
+        onReset: @escaping () -> Void,
+        isPresented: Binding<Bool>
+    ) {
+        self.title = title
+        self.currentDescription = currentDescription
+        self.onSave = onSave
+        self.onReset = onReset
+        self._isPresented = isPresented
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Record Shortcut")
+            Text(title)
                 .font(.title3.weight(.bold))
 
             Text(helperText)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
 
-            Text("Current: \(settings.shortcutDescription)")
+            Text("Current: \(currentDescription)")
                 .font(.system(size: 13, weight: .medium, design: .rounded))
 
             HStack {
                 Button("Use Default") {
-                    settings.resetShortcutToDefault()
+                    onReset()
                     isPresented = false
                 }
 
@@ -63,7 +91,7 @@ struct ShortcutRecorderSheet: View {
                 return nil
             }
 
-            settings.updateShortcut(keyCode: Int(event.keyCode), modifierFlags: modifiers)
+            onSave(Int(event.keyCode), modifiers)
             isPresented = false
             return nil
         }
