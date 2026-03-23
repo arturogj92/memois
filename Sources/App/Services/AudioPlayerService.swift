@@ -12,11 +12,15 @@ final class AudioPlayerService: ObservableObject {
 
     func load(url: URL) {
         stop()
-        guard let p = try? AVAudioPlayer(contentsOf: url) else { return }
-        player = p
-        p.prepareToPlay()
-        duration = p.duration
-        currentTime = 0
+        Task.detached(priority: .userInitiated) {
+            guard let p = try? AVAudioPlayer(contentsOf: url) else { return }
+            p.prepareToPlay()
+            await MainActor.run {
+                self.player = p
+                self.duration = p.duration
+                self.currentTime = 0
+            }
+        }
     }
 
     func togglePlayback() {

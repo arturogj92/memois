@@ -7,6 +7,27 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.7.0</title>
+            <description><![CDATA[
+<h2>What's New in 0.7.0</h2>
+<ul>
+    <li><strong>Fix stuck transcriptions</strong> — Transcriptions stuck in "processing" after app restart are now automatically recovered. Retry button available as safety net.</li>
+    <li><strong>Faster transcript viewer</strong> — Large transcriptions (1h+) now open instantly with lazy rendering, background audio loading, and async data loading.</li>
+    <li><strong>Smoother speaker editing</strong> — Renaming speakers no longer causes lag on large transcriptions. Names apply on Enter instead of every keystroke.</li>
+</ul>
+            ]]></description>
+            <pubDate>Mon, 23 Mar 2026 09:25:27 +0100</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.7.0/Memois-v0.7.0-macOS.zip"
+                sparkle:version="4"
+                sparkle:shortVersionString="0.7.0"
+                length="3384430"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.6.0</title>
             <description><![CDATA[
 <h2>What's New in 0.6.0</h2>

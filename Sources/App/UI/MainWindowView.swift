@@ -555,11 +555,11 @@ struct MainWindowView: View {
                     )
                 }
 
-                if recording.transcriptionStatus == .none || recording.transcriptionStatus == .failed {
+                if recording.transcriptionStatus == .none || recording.transcriptionStatus == .failed || recording.transcriptionStatus == .processing {
                     Button {
                         model.transcribe(recordingID: recording.id)
                     } label: {
-                        Text("Transcribe")
+                        Text(recording.transcriptionStatus == .processing ? "Retry" : "Transcribe")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.8))
                     }

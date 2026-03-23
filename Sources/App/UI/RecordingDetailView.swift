@@ -18,6 +18,7 @@ struct RecordingDetailView: View {
     @State private var screenshots: [Screenshot] = []
     @State private var selectedScreenshot: Screenshot?
     @State private var utterances: [TranscriptUtterance] = []
+    @State private var editingSpeakerNames: [String: String] = [:]
     @State private var searchText: String = ""
     @State private var searchMatchIndex: Int = 0
 
@@ -91,16 +92,19 @@ struct RecordingDetailView: View {
                                     .frame(width: 14)
 
                                 TextField("Name", text: Binding(
-                                    get: { speakerNames[speaker] ?? "" },
-                                    set: { newValue in
-                                        speakerNames[speaker] = newValue
-                                        model.saveSpeakerNames(speakerNames, for: recording)
-                                    }
+                                    get: { editingSpeakerNames[speaker] ?? "" },
+                                    set: { editingSpeakerNames[speaker] = $0 }
                                 ))
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(size: 12))
+                                .onSubmit {
+                                    commitSpeakerNames()
+                                }
                             }
                         }
+                    }
+                    .onDisappear {
+                        commitSpeakerNames()
                     }
                 }
                 .padding(10)
@@ -169,10 +173,10 @@ struct RecordingDetailView: View {
             // Transcript content
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
+                    LazyVStack(alignment: .leading, spacing: 4) {
                         if hasUtterances {
                             // Structured utterance view with timestamps
-                            ForEach(Array(utterancesForDisplay.enumerated()), id: \.element.id) { index, utterance in
+                            ForEach(utterancesForDisplay) { utterance in
                                 utteranceRow(utterance, isCurrentMatch: isCurrentSearchMatch(utterance))
                                     .id(utterance.id)
                             }
@@ -253,12 +257,24 @@ struct RecordingDetailView: View {
         .padding(24)
         .frame(width: 600, height: 700)
         .background(Color.surfaceBase)
-        .onAppear {
-            rawTranscript = model.readTranscript(for: recording) ?? ""
+        .task {
+            let rec = recording
+            let loadedTranscript = await Task.detached(priority: .userInitiated) {
+                (try? String(contentsOf: rec.transcriptionURL ?? rec.folderURL, encoding: .utf8)) ?? ""
+            }.value
+            let loadedUtterances = await Task.detached(priority: .userInitiated) {
+                let url = rec.utterancesURL
+                guard let data = try? Data(contentsOf: url),
+                      let u = try? JSONDecoder().decode([TranscriptUtterance].self, from: data) else { return [TranscriptUtterance]() }
+                return u
+            }.value
+
+            rawTranscript = loadedTranscript
             speakerNames = model.loadSpeakerNames(for: recording)
-            detectedSpeakers = extractSpeakers(from: rawTranscript)
+            editingSpeakerNames = speakerNames
+            detectedSpeakers = extractSpeakers(from: loadedTranscript)
             screenshots = model.loadScreenshots(for: recording)
-            utterances = model.loadUtterances(for: recording)
+            utterances = loadedUtterances
         }
         .sheet(item: $selectedScreenshot) { screenshot in
             ScreenshotPreviewView(
@@ -266,6 +282,14 @@ struct RecordingDetailView: View {
                 timestamp: screenshot.formattedTimestamp
             )
         }
+    }
+
+    // MARK: - Speaker Names
+
+    private func commitSpeakerNames() {
+        guard editingSpeakerNames != speakerNames else { return }
+        speakerNames = editingSpeakerNames
+        model.saveSpeakerNames(speakerNames, for: recording)
     }
 
     // MARK: - Utterances

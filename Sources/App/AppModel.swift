@@ -63,6 +63,19 @@ final class AppModel: ObservableObject {
         self.permissionStatus = permissions.currentStatus()
         self.recordings = recordingStore.load()
 
+        // Reset transcriptions stuck in uploading/processing from a previous session
+        var didReset = false
+        for i in recordings.indices {
+            if recordings[i].transcriptionStatus == .uploading || recordings[i].transcriptionStatus == .processing {
+                recordings[i].transcriptionStatus = .none
+                recordings[i].transcriptionError = nil
+                didReset = true
+            }
+        }
+        if didReset {
+            recordingStore.save(recordings)
+        }
+
         audioRecorder.onMicLevel = { [weak self] level in
             Task { @MainActor [weak self] in
                 self?.micLevel = level
