@@ -1320,21 +1320,22 @@ struct MainWindowView: View {
                     Image("ClaudeCode")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 12, height: 12)
+                        .frame(width: 10, height: 10)
                 }
                 Text(isSending ? "Sending..." : wasSent ? "Sent" : "Claude")
                     .font(.system(size: 11, weight: .medium))
             }
             .foregroundStyle(.white.opacity(0.8))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(wasSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.06))
-            )
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(wasSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.06))
+        )
         .disabled(isSending)
         .help(wasSent ? "Sent to \(recording.claudeCodeProject ?? "Claude Code")" : "Send to Claude Code")
     }
