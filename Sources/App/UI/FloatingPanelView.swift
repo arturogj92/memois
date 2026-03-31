@@ -98,6 +98,34 @@ struct FloatingPanelView: View {
                                 .frame(width: 30, alignment: .trailing)
                         }
                     }
+
+                    // Pipeline selector
+                    if !model.pipelines.filter(\.isEnabled).isEmpty {
+                        Divider()
+                            .background(Color.white.opacity(0.1))
+                            .padding(.vertical, 4)
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.white.opacity(0.4))
+                            Text("Pipeline")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.4))
+                            Spacer()
+                            Picker("", selection: Binding(
+                                get: { model.selectedPipelineId },
+                                set: { model.selectedPipelineId = $0 }
+                            )) {
+                                Text("None").tag(UUID?.none)
+                                ForEach(model.pipelines.filter(\.isEnabled)) { pipeline in
+                                    Text(pipeline.name).tag(UUID?.some(pipeline.id))
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 150)
+                        }
+                    }
                 }
                 .padding(16)
             } else {
