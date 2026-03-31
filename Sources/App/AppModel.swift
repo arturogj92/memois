@@ -225,7 +225,8 @@ final class AppModel: ObservableObject {
                 transcriptionFileName: nil,
                 transcriptionStatus: .none,
                 transcriptionModel: nil,
-                speakerCount: nil
+                speakerCount: nil,
+                pipelineId: nil
             )
 
             recordings.insert(recording, at: 0)
@@ -360,7 +361,8 @@ final class AppModel: ObservableObject {
                 transcriptionFileName: nil,
                 transcriptionStatus: .none,
                 transcriptionModel: nil,
-                speakerCount: nil
+                speakerCount: nil,
+                pipelineId: nil
             )
 
             recordings.insert(recording, at: 0)
@@ -540,7 +542,8 @@ final class AppModel: ObservableObject {
                 transcriptionFileName: recording.transcriptionFileName,
                 transcriptionStatus: recording.transcriptionStatus == .failed ? .none : recording.transcriptionStatus,
                 transcriptionModel: recording.transcriptionModel,
-                speakerCount: recording.speakerCount
+                speakerCount: recording.speakerCount,
+                pipelineId: nil
             )
             recordingStore.save(recordings)
             statusMessage = "Recording repaired"
