@@ -42,7 +42,6 @@ struct MainWindowView: View {
     private enum SidebarTab: String, CaseIterable, Identifiable {
         case recordings = "Recordings"
         case stats = "Usage"
-        case pipelines = "Pipelines"
         case settings = "Settings"
         case permissions = "Permissions"
 
@@ -52,7 +51,6 @@ struct MainWindowView: View {
             switch self {
             case .recordings: "waveform.circle"
             case .stats: "chart.bar"
-            case .pipelines: "arrow.triangle.branch"
             case .settings: "gearshape"
             case .permissions: "lock.shield"
             }
@@ -277,7 +275,6 @@ struct MainWindowView: View {
                 switch selectedTab {
                 case .recordings: recordingsContent
                 case .stats: statsContent
-                case .pipelines: PipelinesSettingsView(model: model)
                 case .settings: settingsContent
                 case .permissions: permissionsContent
                 }
@@ -491,11 +488,6 @@ struct MainWindowView: View {
 
                 // Status badge
                 statusBadge(for: recording.transcriptionStatus)
-
-                // Pipeline status badge
-                if let execution = model.pipelineEngine.execution(for: recording.id) {
-                    pipelineStatusBadge(execution)
-                }
             }
 
             // Show error message if failed
@@ -619,50 +611,6 @@ struct MainWindowView: View {
                     )
                 }
 
-                if let execution = model.pipelineEngine.execution(for: recording.id) {
-                    if execution.status == .waitingForUser {
-                        Button {
-                            model.pipelineEngine.forceContinue(executionId: execution.id)
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 10))
-                                Text("Continue Pipeline")
-                                    .font(.system(size: 11, weight: .medium))
-                            }
-                            .foregroundStyle(.white.opacity(0.8))
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.brandYellow.opacity(0.2))
-                        )
-                    }
-
-                    if execution.status == .failed {
-                        Button {
-                            model.pipelineEngine.retryStep(executionId: execution.id)
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 10))
-                                Text("Retry Pipeline")
-                                    .font(.system(size: 11, weight: .medium))
-                            }
-                            .foregroundStyle(.white.opacity(0.8))
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.brandPink.opacity(0.2))
-                        )
-                    }
-                }
-
                 Button {
                     model.deleteRecording(id: recording.id)
                 } label: {
@@ -728,29 +676,6 @@ struct MainWindowView: View {
             case .uploading, .processing: return ("Transcribing", .brandCyan)
             case .completed: return ("Transcribed", .brandGreen)
             case .failed: return ("Failed", .brandPink)
-            }
-        }()
-
-        return Text(label)
-            .font(.system(size: 10, weight: .bold))
-            .textCase(.uppercase)
-            .tracking(0.5)
-            .foregroundStyle(color.opacity(0.9))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.15)))
-    }
-
-    private func pipelineStatusBadge(_ execution: PipelineExecution) -> some View {
-        let enabledCount = execution.stepResults.count
-        let completedCount = execution.stepResults.filter { $0.status == .completed }.count
-        let (label, color): (String, Color) = {
-            switch execution.status {
-            case .running: return ("Pipeline \(completedCount)/\(enabledCount)", .brandCyan)
-            case .waitingForUser: return ("Awaiting speakers", .brandYellow)
-            case .completed: return ("Pipeline done", .brandGreen)
-            case .failed: return ("Pipeline failed", .brandPink)
-            case .paused: return ("Pipeline paused", .brandYellow)
             }
         }()
 

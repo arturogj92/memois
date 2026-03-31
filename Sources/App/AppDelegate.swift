@@ -18,8 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             permissions: PermissionManager(),
             recordingStore: RecordingStore(),
             audioRecorder: AudioRecorder(),
-            assemblyAI: AssemblyAIClient(),
-            pipelineStore: PipelineStore()
+            assemblyAI: AssemblyAIClient()
         )
         super.init()
 

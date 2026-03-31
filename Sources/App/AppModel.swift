@@ -33,10 +33,6 @@ final class AppModel: ObservableObject {
 
     let settings: SettingsStore
     let transcriptionStats = TranscriptionStatsStore()
-    let pipelineStore: PipelineStore
-    let pipelineEngine: PipelineEngine
-    @Published var pipelines: [Pipeline] = []
-    @Published var selectedPipelineId: UUID?
 
     var showMainWindow: (() -> Void)?
     var showFloatingPanel: (() -> Void)?
@@ -57,8 +53,7 @@ final class AppModel: ObservableObject {
         permissions: PermissionManager,
         recordingStore: RecordingStore,
         audioRecorder: AudioRecorder,
-        assemblyAI: AssemblyAIClient,
-        pipelineStore: PipelineStore
+        assemblyAI: AssemblyAIClient
     ) {
         self.settings = settings
         self.permissions = permissions
@@ -67,9 +62,6 @@ final class AppModel: ObservableObject {
         self.assemblyAI = assemblyAI
         self.permissionStatus = permissions.currentStatus()
         self.recordings = recordingStore.load()
-        self.pipelineStore = pipelineStore
-        self.pipelineEngine = PipelineEngine(store: pipelineStore)
-        self.pipelines = pipelineStore.loadPipelines()
 
         // Reset transcriptions stuck in uploading/processing from a previous session
         var didReset = false
@@ -83,9 +75,6 @@ final class AppModel: ObservableObject {
         if didReset {
             recordingStore.save(recordings)
         }
-
-        pipelineEngine.setAppModel(self)
-        pipelineEngine.resumePendingExecutions()
 
         audioRecorder.onMicLevel = { [weak self] level in
             Task { @MainActor [weak self] in
@@ -174,7 +163,6 @@ final class AppModel: ObservableObject {
 
     private func startRecording() {
         guard !isSavingRecording else { return }
-        selectedPipelineId = pipelines.first(where: { $0.isDefault && $0.isEnabled })?.id
         sessionState = .recording
         statusMessage = "Recording..."
         recordingStartedAt = Date()
@@ -237,22 +225,11 @@ final class AppModel: ObservableObject {
                 transcriptionFileName: nil,
                 transcriptionStatus: .none,
                 transcriptionModel: nil,
-                speakerCount: nil,
-                pipelineId: nil
+                speakerCount: nil
             )
 
             recordings.insert(recording, at: 0)
             recordingStore.save(recordings)
-
-            // Start pipeline if one is assigned
-            let pipelineIdToUse = selectedPipelineId ?? pipelines.first(where: { $0.isDefault && $0.isEnabled })?.id
-            if let pid = pipelineIdToUse, let pipeline = pipelines.first(where: { $0.id == pid && $0.isEnabled }) {
-                recordings[0].pipelineId = pid
-                recordingStore.save(recordings)
-                pipelineEngine.startPipeline(pipeline, for: recording.id)
-            }
-            selectedPipelineId = nil
-
             isSavingRecording = false
             statusMessage = "Recording saved"
             micLevel = 0
@@ -383,8 +360,7 @@ final class AppModel: ObservableObject {
                 transcriptionFileName: nil,
                 transcriptionStatus: .none,
                 transcriptionModel: nil,
-                speakerCount: nil,
-                pipelineId: nil
+                speakerCount: nil
             )
 
             recordings.insert(recording, at: 0)
@@ -431,7 +407,6 @@ final class AppModel: ObservableObject {
         let url = recording.speakerNamesURL
         guard let data = try? JSONEncoder().encode(names) else { return }
         try? data.write(to: url, options: .atomic)
-        pipelineEngine.notifySpeakersAssigned(recordingId: recording.id)
     }
 
     func applyingSpeakerNames(_ names: [String: String], to transcript: String) -> String {
@@ -565,8 +540,7 @@ final class AppModel: ObservableObject {
                 transcriptionFileName: recording.transcriptionFileName,
                 transcriptionStatus: recording.transcriptionStatus == .failed ? .none : recording.transcriptionStatus,
                 transcriptionModel: recording.transcriptionModel,
-                speakerCount: recording.speakerCount,
-                pipelineId: nil
+                speakerCount: recording.speakerCount
             )
             recordingStore.save(recordings)
             statusMessage = "Recording repaired"
@@ -653,32 +627,6 @@ final class AppModel: ObservableObject {
         sessionState = .error(message)
         statusMessage = message
         hideFloatingPanel?()
-    }
-
-    // MARK: - Pipelines
-
-    func addPipeline(name: String) {
-        let pipeline = Pipeline(name: name)
-        pipelines.append(pipeline)
-        pipelineStore.savePipelines(pipelines)
-    }
-
-    func deletePipeline(id: UUID) {
-        pipelines.removeAll { $0.id == id }
-        pipelineStore.savePipelines(pipelines)
-    }
-
-    func updatePipeline(_ pipeline: Pipeline) {
-        guard let index = pipelines.firstIndex(where: { $0.id == pipeline.id }) else { return }
-        pipelines[index] = pipeline
-        pipelineStore.savePipelines(pipelines)
-    }
-
-    func setDefaultPipeline(id: UUID) {
-        for i in pipelines.indices {
-            pipelines[i].isDefault = (pipelines[i].id == id)
-        }
-        pipelineStore.savePipelines(pipelines)
     }
 }
 

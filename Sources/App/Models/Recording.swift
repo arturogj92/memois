@@ -48,7 +48,6 @@ struct Recording: Codable, Identifiable {
     var transcriptionModel: String?
     var speakerCount: Int?
     var transcriptionError: String?
-    var pipelineId: UUID?
 
     enum TranscriptionStatus: String, Codable {
         case none
