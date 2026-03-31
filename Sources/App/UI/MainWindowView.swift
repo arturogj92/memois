@@ -38,6 +38,7 @@ struct MainWindowView: View {
     @State private var selectedRecording: Recording?
     @State private var editingNameID: UUID?
     @State private var editingNameText = ""
+    @State private var sendingClaudeCodeID: UUID?
 
     private enum SidebarTab: String, CaseIterable, Identifiable {
         case recordings = "Recordings"
@@ -595,31 +596,8 @@ struct MainWindowView: View {
                             .fill(Color.brandYellow.opacity(0.15))
                     )
 
-                    // Send to Claude Code button
-                    Button {
-                        selectedRecording = recording
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image("ClaudeCode")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 14, height: 14)
-                                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                            if recording.claudeCodeSentAt != nil {
-                                Text("Sent")
-                                    .font(.system(size: 11, weight: .medium))
-                            }
-                        }
-                        .foregroundStyle(.white.opacity(0.8))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, recording.claudeCodeSentAt != nil ? 10 : 6)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(recording.claudeCodeSentAt != nil ? Color.brandCyan.opacity(0.15) : .white.opacity(0.06))
-                    )
-                    .help(recording.claudeCodeSentAt != nil ? "Sent to \(recording.claudeCodeProject ?? "Claude Code")" : "Send to Claude Code")
+                    // Send to Claude Code
+                    sendToClaudeCodeMenu(for: recording)
 
                     Button {
                         selectedRecording = recording
@@ -1300,6 +1278,122 @@ struct MainWindowView: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
+    }
+
+    // MARK: - Send to Claude Code (from recording list)
+
+    private func sendToClaudeCodeMenu(for recording: Recording) -> some View {
+        let isSending = sendingClaudeCodeID == recording.id
+        let wasSent = recording.claudeCodeSentAt != nil
+
+        return Menu {
+            if !settings.claudeCodeProjects.isEmpty {
+                ForEach(settings.claudeCodeProjects) { project in
+                    Button {
+                        sendRecordingToClaudeCode(recording, directory: project.directoryPath, projectName: project.name)
+                    } label: {
+                        Label(project.name, systemImage: "folder")
+                    }
+                }
+                Divider()
+            }
+
+            Button {
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.allowsMultipleSelection = false
+                panel.message = "Select directory for Claude Code"
+                if panel.runModal() == .OK, let url = panel.url {
+                    sendRecordingToClaudeCode(recording, directory: url.path, projectName: url.lastPathComponent)
+                }
+            } label: {
+                Label("Choose Directory...", systemImage: "folder.badge.plus")
+            }
+        } label: {
+            HStack(spacing: 4) {
+                if isSending {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.6)
+                } else {
+                    Image("ClaudeCode")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 12, height: 12)
+                }
+                Text(isSending ? "Sending..." : wasSent ? "Sent" : "Claude")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(.white.opacity(0.8))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(wasSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.06))
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(isSending)
+        .help(wasSent ? "Sent to \(recording.claudeCodeProject ?? "Claude Code")" : "Send to Claude Code")
+    }
+
+    private func sendRecordingToClaudeCode(_ recording: Recording, directory: String, projectName: String) {
+        guard sendingClaudeCodeID == nil else { return }
+        sendingClaudeCodeID = recording.id
+
+        // Build prompt
+        let speakerNames = model.loadSpeakerNames(for: recording)
+        let rawTranscript = model.readTranscript(for: recording) ?? ""
+        let transcript = model.applyingSpeakerNames(speakerNames, to: rawTranscript)
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .long
+        dateFormatter.timeStyle = .short
+        let dateStr = dateFormatter.string(from: recording.createdAt)
+        let recordingName = recording.name ?? "Untitled Recording"
+        let speakerList = speakerNames.values.filter { !$0.isEmpty }.joined(separator: ", ")
+
+        var prompt = "Here is the transcript from a meeting recorded on \(dateStr), titled '\(recordingName)'.\n\n"
+        if !speakerList.isEmpty {
+            prompt += "Speakers: \(speakerList)\n\n"
+        }
+        prompt += transcript
+
+        let recordingId = recording.id
+
+        Task.detached(priority: .userInitiated) {
+            let paths = ["\(NSHomeDirectory())/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(NSHomeDirectory())/.claude/local/claude"]
+            guard let execPath = paths.first(where: { FileManager.default.fileExists(atPath: $0) }),
+                  FileManager.default.fileExists(atPath: directory) else {
+                await MainActor.run { sendingClaudeCodeID = nil }
+                return
+            }
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: execPath)
+            process.arguments = ["--dangerously-skip-permissions", "-p", prompt]
+            process.currentDirectoryURL = URL(fileURLWithPath: directory)
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8) ?? ""
+                await MainActor.run {
+                    if process.terminationStatus == 0 {
+                        model.saveClaudeCodeResponse(output, projectName: projectName, for: recordingId)
+                    }
+                    sendingClaudeCodeID = nil
+                }
+            } catch {
+                await MainActor.run { sendingClaudeCodeID = nil }
+            }
+        }
     }
 
     // MARK: - Permissions
