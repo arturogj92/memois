@@ -24,6 +24,8 @@ struct RecordingDetailView: View {
     @State private var showingSendToClaudeCode = false
     @State private var sendingToClaudeCode = false
     @State private var claudeCodeSent = false
+    @State private var claudeCodeResponse = ""
+    @State private var showingClaudeCodeResponse = false
     @State private var newProjectName = ""
     @State private var showingNewProjectForm = false
 
@@ -440,65 +442,139 @@ struct RecordingDetailView: View {
     // MARK: - Send to Claude Code
 
     private var sendToClaudeCodeButton: some View {
-        Menu {
-            if !model.settings.claudeCodeProjects.isEmpty {
-                Section("Saved Projects") {
-                    ForEach(model.settings.claudeCodeProjects) { project in
-                        Button {
-                            sendToClaudeCode(directory: project.directoryPath)
-                        } label: {
-                            Label(project.name, systemImage: "terminal")
+        HStack(spacing: 6) {
+            Menu {
+                if !model.settings.claudeCodeProjects.isEmpty {
+                    Section("Saved Projects") {
+                        ForEach(model.settings.claudeCodeProjects) { project in
+                            Button {
+                                sendToClaudeCode(directory: project.directoryPath)
+                            } label: {
+                                Label(project.name, systemImage: "terminal")
+                            }
                         }
                     }
                 }
-            }
 
-            Section {
-                Button {
-                    let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
-                    panel.canChooseFiles = false
-                    panel.allowsMultipleSelection = false
-                    panel.message = "Select directory for Claude Code"
-                    if panel.runModal() == .OK, let url = panel.url {
-                        sendToClaudeCode(directory: url.path)
+                Section {
+                    Button {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.allowsMultipleSelection = false
+                        panel.message = "Select directory for Claude Code"
+                        if panel.runModal() == .OK, let url = panel.url {
+                            sendToClaudeCode(directory: url.path)
+                        }
+                    } label: {
+                        Label("Choose Directory...", systemImage: "folder")
                     }
-                } label: {
-                    Label("Choose Directory...", systemImage: "folder")
-                }
 
+                    Button {
+                        showingNewProjectForm = true
+                    } label: {
+                        Label("New Project...", systemImage: "plus")
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    if sendingToClaudeCode {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                    } else {
+                        Image(systemName: claudeCodeSent ? "checkmark.circle.fill" : "terminal")
+                            .font(.system(size: 11))
+                    }
+                    Text(sendingToClaudeCode ? "Sending..." : claudeCodeSent ? "Sent" : "Send to Claude Code")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(claudeCodeSent ? Color.brandCyan : .white.opacity(0.8))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(claudeCodeSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.08))
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(sendingToClaudeCode)
+
+            if claudeCodeSent && !claudeCodeResponse.isEmpty {
                 Button {
-                    showingNewProjectForm = true
+                    showingClaudeCodeResponse = true
                 } label: {
-                    Label("New Project...", systemImage: "plus")
+                    HStack(spacing: 4) {
+                        Image(systemName: "eye")
+                            .font(.system(size: 11))
+                        Text("View Response")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(Color.brandCyan)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.brandCyan.opacity(0.1))
+                    )
                 }
+                .buttonStyle(.plain)
             }
-        } label: {
-            HStack(spacing: 4) {
-                if sendingToClaudeCode {
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.7)
-                } else {
-                    Image(systemName: claudeCodeSent ? "checkmark.circle.fill" : "terminal")
-                        .font(.system(size: 11))
-                }
-                Text(claudeCodeSent ? "Sent" : "Send to Claude Code")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .foregroundStyle(claudeCodeSent ? Color.brandCyan : .white.opacity(0.8))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(claudeCodeSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.08))
-            )
         }
-        .menuStyle(.borderlessButton)
-        .disabled(sendingToClaudeCode)
         .sheet(isPresented: $showingNewProjectForm) {
             newProjectSheet
         }
+        .sheet(isPresented: $showingClaudeCodeResponse) {
+            claudeCodeResponseSheet
+        }
+    }
+
+    private var claudeCodeResponseSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.brandCyan)
+                    Text("Claude Code Response")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+                Button {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(claudeCodeResponse, forType: .string)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 10))
+                        Text("Copy")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+                .controlSize(.small)
+
+                Button("Close") { showingClaudeCodeResponse = false }
+                    .keyboardShortcut(.cancelAction)
+            }
+
+            ScrollView {
+                Text(claudeCodeResponse)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.surfaceCard)
+            )
+        }
+        .padding(20)
+        .frame(width: 700, height: 500)
+        .background(Color.surfaceBase)
     }
 
     private var newProjectSheet: some View {
@@ -545,20 +621,16 @@ struct RecordingDetailView: View {
         guard !sendingToClaudeCode else { return }
         sendingToClaudeCode = true
         claudeCodeSent = false
+        claudeCodeResponse = ""
 
         let transcript = buildClaudeCodePrompt()
 
         Task.detached(priority: .userInitiated) {
-            let success = await Self.runClaudeCode(prompt: transcript, directory: directory)
+            let (success, output) = await Self.runClaudeCode(prompt: transcript, directory: directory)
             await MainActor.run {
                 sendingToClaudeCode = false
                 claudeCodeSent = success
-                if success {
-                    // Reset after 3 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        claudeCodeSent = false
-                    }
-                }
+                claudeCodeResponse = output
             }
         }
     }
@@ -582,17 +654,17 @@ struct RecordingDetailView: View {
         return prompt
     }
 
-    private static func runClaudeCode(prompt: String, directory: String) async -> Bool {
+    private static func runClaudeCode(prompt: String, directory: String) async -> (Bool, String) {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let paths = ["/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(NSHomeDirectory())/.claude/local/claude"]
                 guard let execPath = paths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-                    continuation.resume(returning: false)
+                    continuation.resume(returning: (false, "Claude Code binary not found"))
                     return
                 }
 
                 guard FileManager.default.fileExists(atPath: directory) else {
-                    continuation.resume(returning: false)
+                    continuation.resume(returning: (false, "Directory not found: \(directory)"))
                     return
                 }
 
@@ -600,15 +672,19 @@ struct RecordingDetailView: View {
                 process.executableURL = URL(fileURLWithPath: execPath)
                 process.arguments = ["--dangerously-skip-permissions", "-p", prompt]
                 process.currentDirectoryURL = URL(fileURLWithPath: directory)
-                process.standardOutput = FileHandle.nullDevice
-                process.standardError = FileHandle.nullDevice
+
+                let outputPipe = Pipe()
+                process.standardOutput = outputPipe
+                process.standardError = outputPipe
 
                 do {
                     try process.run()
                     process.waitUntilExit()
-                    continuation.resume(returning: process.terminationStatus == 0)
+                    let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    continuation.resume(returning: (process.terminationStatus == 0, output))
                 } catch {
-                    continuation.resume(returning: false)
+                    continuation.resume(returning: (false, "Failed to launch: \(error.localizedDescription)"))
                 }
             }
         }
