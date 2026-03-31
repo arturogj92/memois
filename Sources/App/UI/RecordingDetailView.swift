@@ -700,7 +700,7 @@ struct RecordingDetailView: View {
     private static func runClaudeCode(prompt: String, directory: String) async -> (Bool, String) {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let paths = ["/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(NSHomeDirectory())/.claude/local/claude"]
+                let paths = ["\(NSHomeDirectory())/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(NSHomeDirectory())/.claude/local/claude"]
                 guard let execPath = paths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
                     continuation.resume(returning: (false, "Claude Code binary not found"))
                     return
