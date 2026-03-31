@@ -22,6 +22,9 @@ final class PipelineEngine: ObservableObject {
         let enabledSteps = pipeline.steps.filter(\.isEnabled)
         guard !enabledSteps.isEmpty else { return }
 
+        // Remove any existing execution for this recording to avoid duplicates
+        executions.removeAll { $0.recordingId == recordingId }
+
         let execution = PipelineExecution(pipelineId: pipeline.id, recordingId: recordingId, steps: enabledSteps)
         executions.append(execution)
         saveExecutions()
@@ -75,8 +78,15 @@ final class PipelineEngine: ObservableObject {
 
         model.transcribe(recordingID: recordingId)
 
-        while true {
+        // Poll with timeout (30 min max) and cancellation support
+        let maxAttempts = 900 // 30 minutes at 2s intervals
+        for _ in 0..<maxAttempts {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
+
+            guard !Task.isCancelled else {
+                markStepFailed(executionId: executionId, stepIndex: stepIndex, error: "Cancelled")
+                return
+            }
 
             guard let recIndex = model.recordings.firstIndex(where: { $0.id == recordingId }) else {
                 markStepFailed(executionId: executionId, stepIndex: stepIndex, error: "Recording not found")
@@ -120,6 +130,11 @@ final class PipelineEngine: ObservableObject {
             return
         }
 
+        guard FileManager.default.fileExists(atPath: config.directoryPath) else {
+            markStepFailed(executionId: executionId, stepIndex: stepIndex, error: "Directory not found: \(config.directoryPath)")
+            return
+        }
+
         let success = await runClaudeCode(prompt: prompt, directory: config.directoryPath)
 
         guard let exIndex = executions.firstIndex(where: { $0.id == executionId }) else { return }
@@ -149,11 +164,11 @@ final class PipelineEngine: ObservableObject {
         let speakerList = speakerNames.isEmpty ? "Unknown" : speakerNames.values.filter { !$0.isEmpty }.joined(separator: ", ")
 
         var prompt = """
-        Here is the transcript from a meeting recorded on \(dateStr), titled '\(recordingName)'.
+Here is the transcript from a meeting recorded on \(dateStr), titled '\(recordingName)'.
 
-        Speakers: \(speakerList)
+Speakers: \(speakerList)
 
-        """
+"""
 
         if !config.promptPrefix.isEmpty {
             prompt += config.promptPrefix + "\n\n"
