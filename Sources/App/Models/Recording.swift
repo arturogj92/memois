@@ -1,5 +1,17 @@
 import Foundation
 
+struct ClaudeCodeProject: Codable, Identifiable, Equatable {
+    let id: UUID
+    var name: String
+    var directoryPath: String
+
+    init(id: UUID = UUID(), name: String, directoryPath: String) {
+        self.id = id
+        self.name = name
+        self.directoryPath = directoryPath
+    }
+}
+
 struct TranscriptUtterance: Codable, Identifiable {
     let id: UUID
     let speaker: String

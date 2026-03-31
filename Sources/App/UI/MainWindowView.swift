@@ -1051,6 +1051,45 @@ struct MainWindowView: View {
                 }
             }
 
+            // Claude Code Projects
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Claude Code Projects")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                        Spacer()
+                        Button {
+                            addClaudeCodeProject()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 9))
+                                Text("Add")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                        }
+                        .controlSize(.small)
+                    }
+
+                    Text("Saved directories for sending transcripts to Claude Code")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.3))
+
+                    if settings.claudeCodeProjects.isEmpty {
+                        Text("No projects configured")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.2))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    } else {
+                        ForEach(settings.claudeCodeProjects) { project in
+                            claudeCodeProjectRow(project)
+                        }
+                    }
+                }
+            }
+
             // Sounds
             card {
                 VStack(alignment: .leading, spacing: 10) {
@@ -1190,6 +1229,51 @@ struct MainWindowView: View {
             .buttonStyle(.plain)
             .help("Preview")
         }
+    }
+
+    private func addClaudeCodeProject() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a project directory"
+        if panel.runModal() == .OK, let url = panel.url {
+            let name = url.lastPathComponent
+            let project = ClaudeCodeProject(name: name, directoryPath: url.path)
+            settings.claudeCodeProjects.append(project)
+        }
+    }
+
+    private func claudeCodeProjectRow(_ project: ClaudeCodeProject) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "terminal")
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.4))
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(project.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                Text(project.directoryPath)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            Button {
+                settings.claudeCodeProjects.removeAll { $0.id == project.id }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Permissions

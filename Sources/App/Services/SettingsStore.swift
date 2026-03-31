@@ -89,6 +89,14 @@ final class SettingsStore: ObservableObject {
         didSet { userDefaults.set(hideDockIcon, forKey: Keys.hideDockIcon) }
     }
 
+    @Published var claudeCodeProjects: [ClaudeCodeProject] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(claudeCodeProjects) {
+                userDefaults.set(data, forKey: Keys.claudeCodeProjects)
+            }
+        }
+    }
+
     private let userDefaults: UserDefaults
 
     init(userDefaults: UserDefaults = .standard) {
@@ -119,6 +127,10 @@ final class SettingsStore: ObservableObject {
         self.speakerDiarization = userDefaults.object(forKey: Keys.speakerDiarization) as? Bool ?? true
         self.startAtLogin = userDefaults.object(forKey: Keys.startAtLogin) as? Bool ?? false
         self.hideDockIcon = userDefaults.object(forKey: Keys.hideDockIcon) as? Bool ?? false
+        if let data = userDefaults.data(forKey: Keys.claudeCodeProjects),
+           let projects = try? JSONDecoder().decode([ClaudeCodeProject].self, from: data) {
+            self.claudeCodeProjects = projects
+        }
     }
 
     var shortcutModifierFlags: CGEventFlags {
@@ -190,4 +202,5 @@ private enum Keys {
     static let speakerDiarization = "settings.speakerDiarization"
     static let startAtLogin = "settings.startAtLogin"
     static let hideDockIcon = "settings.hideDockIcon"
+    static let claudeCodeProjects = "settings.claudeCodeProjects"
 }

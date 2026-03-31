@@ -21,6 +21,11 @@ struct RecordingDetailView: View {
     @State private var editingSpeakerNames: [String: String] = [:]
     @State private var searchText: String = ""
     @State private var searchMatchIndex: Int = 0
+    @State private var showingSendToClaudeCode = false
+    @State private var sendingToClaudeCode = false
+    @State private var claudeCodeSent = false
+    @State private var newProjectName = ""
+    @State private var showingNewProjectForm = false
 
     private var hasUtterances: Bool { !utterances.isEmpty }
 
@@ -65,6 +70,10 @@ struct RecordingDetailView: View {
                 }
 
                 Spacer()
+
+                if recording.transcriptionStatus == .completed {
+                    sendToClaudeCodeButton
+                }
 
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -426,6 +435,183 @@ struct RecordingDetailView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Send to Claude Code
+
+    private var sendToClaudeCodeButton: some View {
+        Menu {
+            if !model.settings.claudeCodeProjects.isEmpty {
+                Section("Saved Projects") {
+                    ForEach(model.settings.claudeCodeProjects) { project in
+                        Button {
+                            sendToClaudeCode(directory: project.directoryPath)
+                        } label: {
+                            Label(project.name, systemImage: "terminal")
+                        }
+                    }
+                }
+            }
+
+            Section {
+                Button {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.allowsMultipleSelection = false
+                    panel.message = "Select directory for Claude Code"
+                    if panel.runModal() == .OK, let url = panel.url {
+                        sendToClaudeCode(directory: url.path)
+                    }
+                } label: {
+                    Label("Choose Directory...", systemImage: "folder")
+                }
+
+                Button {
+                    showingNewProjectForm = true
+                } label: {
+                    Label("New Project...", systemImage: "plus")
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                if sendingToClaudeCode {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: claudeCodeSent ? "checkmark.circle.fill" : "terminal")
+                        .font(.system(size: 11))
+                }
+                Text(claudeCodeSent ? "Sent" : "Send to Claude Code")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(claudeCodeSent ? Color.brandCyan : .white.opacity(0.8))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(claudeCodeSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.08))
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(sendingToClaudeCode)
+        .sheet(isPresented: $showingNewProjectForm) {
+            newProjectSheet
+        }
+    }
+
+    private var newProjectSheet: some View {
+        VStack(spacing: 16) {
+            Text("New Claude Code Project")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+
+            TextField("Project name", text: $newProjectName)
+                .textFieldStyle(.roundedBorder)
+
+            HStack(spacing: 12) {
+                Button("Cancel") {
+                    showingNewProjectForm = false
+                    newProjectName = ""
+                }
+
+                Button("Choose Directory & Create") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.allowsMultipleSelection = false
+                    panel.message = "Select directory for '\(newProjectName)'"
+                    if panel.runModal() == .OK, let url = panel.url {
+                        let name = newProjectName.trimmingCharacters(in: .whitespaces).isEmpty
+                            ? url.lastPathComponent
+                            : newProjectName.trimmingCharacters(in: .whitespaces)
+                        let project = ClaudeCodeProject(name: name, directoryPath: url.path)
+                        model.settings.claudeCodeProjects.append(project)
+                        showingNewProjectForm = false
+                        newProjectName = ""
+                        sendToClaudeCode(directory: url.path)
+                    }
+                }
+                .disabled(false)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .background(Color.surfaceBase)
+    }
+
+    private func sendToClaudeCode(directory: String) {
+        guard !sendingToClaudeCode else { return }
+        sendingToClaudeCode = true
+        claudeCodeSent = false
+
+        let transcript = buildClaudeCodePrompt()
+
+        Task.detached(priority: .userInitiated) {
+            let success = await Self.runClaudeCode(prompt: transcript, directory: directory)
+            await MainActor.run {
+                sendingToClaudeCode = false
+                claudeCodeSent = success
+                if success {
+                    // Reset after 3 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        claudeCodeSent = false
+                    }
+                }
+            }
+        }
+    }
+
+    private func buildClaudeCodePrompt() -> String {
+        let applied = model.applyingSpeakerNames(speakerNames, to: rawTranscript)
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .long
+        dateFormatter.timeStyle = .short
+        let dateStr = dateFormatter.string(from: recording.createdAt)
+
+        let recordingName = recording.name ?? "Untitled Recording"
+        let speakerList = speakerNames.values.filter { !$0.isEmpty }.joined(separator: ", ")
+
+        var prompt = "Here is the transcript from a meeting recorded on \(dateStr), titled '\(recordingName)'.\n\n"
+        if !speakerList.isEmpty {
+            prompt += "Speakers: \(speakerList)\n\n"
+        }
+        prompt += applied
+        return prompt
+    }
+
+    private static func runClaudeCode(prompt: String, directory: String) async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let paths = ["/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(NSHomeDirectory())/.claude/local/claude"]
+                guard let execPath = paths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+                    continuation.resume(returning: false)
+                    return
+                }
+
+                guard FileManager.default.fileExists(atPath: directory) else {
+                    continuation.resume(returning: false)
+                    return
+                }
+
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: execPath)
+                process.arguments = ["--dangerously-skip-permissions", "-p", prompt]
+                process.currentDirectoryURL = URL(fileURLWithPath: directory)
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    continuation.resume(returning: process.terminationStatus == 0)
+                } catch {
+                    continuation.resume(returning: false)
+                }
+            }
+        }
     }
 
     // MARK: - Helpers
