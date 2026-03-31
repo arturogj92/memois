@@ -42,6 +42,7 @@ struct MainWindowView: View {
     private enum SidebarTab: String, CaseIterable, Identifiable {
         case recordings = "Recordings"
         case stats = "Usage"
+        case pipelines = "Pipelines"
         case settings = "Settings"
         case permissions = "Permissions"
 
@@ -51,6 +52,7 @@ struct MainWindowView: View {
             switch self {
             case .recordings: "waveform.circle"
             case .stats: "chart.bar"
+            case .pipelines: "arrow.triangle.branch"
             case .settings: "gearshape"
             case .permissions: "lock.shield"
             }
@@ -275,6 +277,7 @@ struct MainWindowView: View {
                 switch selectedTab {
                 case .recordings: recordingsContent
                 case .stats: statsContent
+                case .pipelines: PipelinesSettingsView(model: model)
                 case .settings: settingsContent
                 case .permissions: permissionsContent
                 }
