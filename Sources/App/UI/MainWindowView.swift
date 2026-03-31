@@ -595,6 +595,32 @@ struct MainWindowView: View {
                             .fill(Color.brandYellow.opacity(0.15))
                     )
 
+                    // Send to Claude Code button
+                    Button {
+                        selectedRecording = recording
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image("ClaudeCode")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 14, height: 14)
+                                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                            if recording.claudeCodeSentAt != nil {
+                                Text("Sent")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                        }
+                        .foregroundStyle(.white.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, recording.claudeCodeSentAt != nil ? 10 : 6)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(recording.claudeCodeSentAt != nil ? Color.brandCyan.opacity(0.15) : .white.opacity(0.06))
+                    )
+                    .help(recording.claudeCodeSentAt != nil ? "Sent to \(recording.claudeCodeProject ?? "Claude Code")" : "Send to Claude Code")
+
                     Button {
                         selectedRecording = recording
                     } label: {

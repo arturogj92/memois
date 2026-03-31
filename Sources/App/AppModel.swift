@@ -409,6 +409,18 @@ final class AppModel: ObservableObject {
         try? data.write(to: url, options: .atomic)
     }
 
+    func saveClaudeCodeResponse(_ response: String, projectName: String, for recordingId: UUID) {
+        guard let index = recordings.firstIndex(where: { $0.id == recordingId }) else { return }
+        try? response.write(to: recordings[index].claudeCodeResponseURL, atomically: true, encoding: .utf8)
+        recordings[index].claudeCodeSentAt = Date()
+        recordings[index].claudeCodeProject = projectName
+        recordingStore.save(recordings)
+    }
+
+    func loadClaudeCodeResponse(for recording: Recording) -> String? {
+        try? String(contentsOf: recording.claudeCodeResponseURL, encoding: .utf8)
+    }
+
     func applyingSpeakerNames(_ names: [String: String], to transcript: String) -> String {
         var result = transcript
         for (key, name) in names where !name.isEmpty {

@@ -286,6 +286,11 @@ struct RecordingDetailView: View {
             detectedSpeakers = extractSpeakers(from: loadedTranscript)
             screenshots = model.loadScreenshots(for: recording)
             utterances = loadedUtterances
+            // Load persisted Claude Code response
+            if let savedResponse = model.loadClaudeCodeResponse(for: recording) {
+                claudeCodeResponse = savedResponse
+                claudeCodeSent = true
+            }
         }
         .sheet(item: $selectedScreenshot) { screenshot in
             ScreenshotPreviewView(
@@ -469,9 +474,15 @@ struct RecordingDetailView: View {
                         ProgressView()
                             .controlSize(.small)
                             .scaleEffect(0.7)
-                    } else {
-                        Image(systemName: claudeCodeSent ? "checkmark.circle.fill" : "terminal")
+                    } else if claudeCodeSent {
+                        Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 11))
+                    } else {
+                        Image("ClaudeCode")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 14, height: 14)
+                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                     }
                     if let project = model.settings.claudeCodeProjects.first, !sendingToClaudeCode && !claudeCodeSent {
                         Text("Send to \(project.name)")
@@ -542,7 +553,7 @@ struct RecordingDetailView: View {
             .disabled(sendingToClaudeCode)
 
             // View Response button
-            if claudeCodeSent && !claudeCodeResponse.isEmpty {
+            if !sendingToClaudeCode && !claudeCodeResponse.isEmpty {
                 Button {
                     showingClaudeCodeResponse = true
                 } label: {
@@ -576,9 +587,11 @@ struct RecordingDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 HStack(spacing: 6) {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.brandCyan)
+                    Image("ClaudeCode")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                     Text("Claude Code Response")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
@@ -666,14 +679,27 @@ struct RecordingDetailView: View {
         claudeCodeSent = false
         claudeCodeResponse = ""
 
+        let projectName = model.settings.claudeCodeProjects.first(where: { $0.directoryPath == directory })?.name ?? URL(fileURLWithPath: directory).lastPathComponent
         let transcript = buildClaudeCodePrompt()
+        let recordingId = recording.id
+        Self.log("Send to Claude Code: directory=\(directory), prompt length=\(transcript.count)")
 
         Task.detached(priority: .userInitiated) {
             let (success, output) = await Self.runClaudeCode(prompt: transcript, directory: directory)
+            Self.log("Claude Code result: success=\(success), output length=\(output.count)")
+            if !success {
+                Self.log("Claude Code error: \(output.prefix(1000))")
+            } else {
+                Self.log("Claude Code response: \(output.prefix(500))")
+            }
             await MainActor.run {
                 sendingToClaudeCode = false
                 claudeCodeSent = success
-                claudeCodeResponse = output
+                let response = output.isEmpty && !success ? "Error: Claude Code failed. Check that the directory exists and claude is installed." : output
+                claudeCodeResponse = response
+                if success {
+                    model.saveClaudeCodeResponse(response, projectName: projectName, for: recordingId)
+                }
             }
         }
     }
@@ -697,16 +723,37 @@ struct RecordingDetailView: View {
         return prompt
     }
 
+    private static func log(_ message: String) {
+        let logURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Memois/claude_code_log.txt")
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "[\(timestamp)] \(message)\n"
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logURL.path) {
+                if let handle = try? FileHandle(forWritingTo: logURL) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    handle.closeFile()
+                }
+            } else {
+                try? data.write(to: logURL)
+            }
+        }
+    }
+
     private static func runClaudeCode(prompt: String, directory: String) async -> (Bool, String) {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let paths = ["\(NSHomeDirectory())/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(NSHomeDirectory())/.claude/local/claude"]
                 guard let execPath = paths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-                    continuation.resume(returning: (false, "Claude Code binary not found"))
+                    log("ERROR: Claude binary not found. Searched: \(paths)")
+                    continuation.resume(returning: (false, "Claude Code binary not found. Searched:\n\(paths.joined(separator: "\n"))"))
                     return
                 }
+                log("Found claude at: \(execPath)")
 
                 guard FileManager.default.fileExists(atPath: directory) else {
+                    log("ERROR: Directory not found: \(directory)")
                     continuation.resume(returning: (false, "Directory not found: \(directory)"))
                     return
                 }
@@ -715,6 +762,7 @@ struct RecordingDetailView: View {
                 process.executableURL = URL(fileURLWithPath: execPath)
                 process.arguments = ["--dangerously-skip-permissions", "-p", prompt]
                 process.currentDirectoryURL = URL(fileURLWithPath: directory)
+                log("Launching: \(execPath) --dangerously-skip-permissions -p <prompt(\(prompt.count) chars)> in \(directory)")
 
                 let outputPipe = Pipe()
                 process.standardOutput = outputPipe
@@ -722,11 +770,14 @@ struct RecordingDetailView: View {
 
                 do {
                     try process.run()
+                    log("Process launched, PID=\(process.processIdentifier). Waiting...")
                     process.waitUntilExit()
                     let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
                     let output = String(data: data, encoding: .utf8) ?? ""
+                    log("Process exited: status=\(process.terminationStatus), output bytes=\(data.count)")
                     continuation.resume(returning: (process.terminationStatus == 0, output))
                 } catch {
+                    log("ERROR launching process: \(error)")
                     continuation.resume(returning: (false, "Failed to launch: \(error.localizedDescription)"))
                 }
             }

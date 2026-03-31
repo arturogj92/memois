@@ -60,6 +60,8 @@ struct Recording: Codable, Identifiable {
     var transcriptionModel: String?
     var speakerCount: Int?
     var transcriptionError: String?
+    var claudeCodeSentAt: Date?
+    var claudeCodeProject: String?
 
     enum TranscriptionStatus: String, Codable {
         case none
@@ -96,6 +98,14 @@ struct Recording: Codable, Identifiable {
 
     var utterancesURL: URL {
         folderURL.appendingPathComponent("transcript_data.json")
+    }
+
+    var claudeCodeResponseURL: URL {
+        folderURL.appendingPathComponent("claude_code_response.txt")
+    }
+
+    var hasClaudeCodeResponse: Bool {
+        FileManager.default.fileExists(atPath: claudeCodeResponseURL.path)
     }
 
     /// Screenshot image URLs found in this recording's folder
