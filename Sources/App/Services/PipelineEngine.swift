@@ -281,15 +281,25 @@ final class PipelineEngine: ObservableObject {
     // MARK: - Resume on app launch
 
     func resumePendingExecutions() {
-        for execution in executions where execution.status == .running {
+        for i in executions.indices where executions[i].status == .running {
+            // Reset the current step from .running back to .pending so it re-executes cleanly
+            let stepIndex = executions[i].currentStepIndex
+            if stepIndex < executions[i].stepResults.count,
+               executions[i].stepResults[stepIndex].status == .running {
+                executions[i].stepResults[stepIndex].status = .pending
+                executions[i].stepResults[stepIndex].error = nil
+            }
+
             let pipelines = store.loadPipelines()
-            guard let pipeline = pipelines.first(where: { $0.id == execution.pipelineId }) else { continue }
+            guard let pipeline = pipelines.first(where: { $0.id == executions[i].pipelineId }) else { continue }
             let enabledSteps = pipeline.steps.filter(\.isEnabled)
+            let executionId = executions[i].id
 
             Task {
-                await runNextStep(executionId: execution.id, steps: enabledSteps)
+                await runNextStep(executionId: executionId, steps: enabledSteps)
             }
         }
+        saveExecutions()
     }
 
     func execution(for recordingId: UUID) -> PipelineExecution? {
