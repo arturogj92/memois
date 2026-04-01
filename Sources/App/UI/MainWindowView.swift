@@ -1317,19 +1317,15 @@ struct MainWindowView: View {
                         .controlSize(.small)
                         .scaleEffect(0.6)
                 } else {
-                    Image("ClaudeCode")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 10, height: 10)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10))
                 }
                 Text(isSending ? "Sending..." : wasSent ? "Sent" : "Claude")
                     .font(.system(size: 11, weight: .medium))
             }
             .foregroundStyle(.white.opacity(0.8))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .buttonStyle(.plain)
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(
