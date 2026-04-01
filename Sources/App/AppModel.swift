@@ -29,6 +29,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var activeTranscription: TranscriptionProgress = .none
     @Published var recordingName = ""
     @Published private(set) var isSavingRecording = false
+    @Published var repairingRecordingIDs: Set<UUID> = []
     @Published private(set) var screenshotCount = 0
 
     let settings: SettingsStore
@@ -547,6 +548,7 @@ final class AppModel: ObservableObject {
 
     func repairRecording(id: UUID) {
         guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
+        guard !repairingRecordingIDs.contains(id) else { return }
         let recording = recordings[index]
         let chunks = recording.chunkURLs
         guard !chunks.isEmpty else {
@@ -554,6 +556,7 @@ final class AppModel: ObservableObject {
             return
         }
 
+        repairingRecordingIDs.insert(id)
         statusMessage = "Repairing recording..."
 
         Task {
@@ -566,6 +569,7 @@ final class AppModel: ObservableObject {
             let micTrackComp = composition.addMutableTrack(
                 withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid
             ) else {
+                repairingRecordingIDs.remove(id)
                 statusMessage = "Repair failed: could not create composition"
                 return
             }
@@ -592,6 +596,7 @@ final class AppModel: ObservableObject {
             guard let exportSession = AVAssetExportSession(
                 asset: composition, presetName: AVAssetExportPresetAppleM4A
             ) else {
+                repairingRecordingIDs.remove(id)
                 statusMessage = "Repair failed: export not available"
                 return
             }
@@ -601,6 +606,7 @@ final class AppModel: ObservableObject {
             await exportSession.export()
 
             guard exportSession.status == .completed else {
+                repairingRecordingIDs.remove(id)
                 statusMessage = "Repair failed: \(exportSession.error?.localizedDescription ?? "export error")"
                 return
             }
@@ -625,6 +631,7 @@ final class AppModel: ObservableObject {
                 speakerCount: recording.speakerCount
             )
             recordingStore.save(recordings)
+            repairingRecordingIDs.remove(id)
             statusMessage = "Recording repaired"
         }
     }

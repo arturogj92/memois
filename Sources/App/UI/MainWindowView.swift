@@ -535,15 +535,23 @@ struct MainWindowView: View {
 
                 Spacer()
 
-                if recording.needsRepair {
+                if recording.needsRepair || model.repairingRecordingIDs.contains(recording.id) {
                     Button {
                         model.repairRecording(id: recording.id)
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: "wrench")
-                                .font(.system(size: 10))
-                            Text("Repair")
-                                .font(.system(size: 11, weight: .medium))
+                            if model.repairingRecordingIDs.contains(recording.id) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .scaleEffect(0.6)
+                                Text("Repairing...")
+                                    .font(.system(size: 11, weight: .medium))
+                            } else {
+                                Image(systemName: "wrench")
+                                    .font(.system(size: 10))
+                                Text("Repair")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
                         }
                         .foregroundStyle(.white.opacity(0.8))
                     }
@@ -554,6 +562,7 @@ struct MainWindowView: View {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(Color.brandYellow.opacity(0.2))
                     )
+                    .disabled(model.repairingRecordingIDs.contains(recording.id))
                 }
 
                 if recording.transcriptionStatus == .none || recording.transcriptionStatus == .failed || recording.transcriptionStatus == .processing {
