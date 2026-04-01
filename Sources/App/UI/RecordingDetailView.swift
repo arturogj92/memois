@@ -771,8 +771,9 @@ struct RecordingDetailView: View {
                 do {
                     try process.run()
                     log("Process launched, PID=\(process.processIdentifier). Waiting...")
-                    process.waitUntilExit()
+                    // Read output before waitUntilExit to avoid pipe buffer deadlock
                     let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
                     let output = String(data: data, encoding: .utf8) ?? ""
                     log("Process exited: status=\(process.terminationStatus), output bytes=\(data.count)")
                     continuation.resume(returning: (process.terminationStatus == 0, output))

@@ -1365,10 +1365,11 @@ struct MainWindowView: View {
         let recordingId = recording.id
 
         Task.detached(priority: .userInitiated) {
-            let paths = ["\(NSHomeDirectory())/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(NSHomeDirectory())/.claude/local/claude"]
+            let home = NSHomeDirectory()
+            let paths = ["\(home)/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(home)/.claude/local/claude"]
             guard let execPath = paths.first(where: { FileManager.default.fileExists(atPath: $0) }),
                   FileManager.default.fileExists(atPath: directory) else {
-                await MainActor.run { sendingClaudeCodeIDs.remove(recordingId) }
+                await MainActor.run { self.sendingClaudeCodeIDs.remove(recordingId) }
                 return
             }
 
@@ -1382,17 +1383,18 @@ struct MainWindowView: View {
 
             do {
                 try process.run()
-                process.waitUntilExit()
+                // Read output before waitUntilExit to avoid pipe buffer deadlock
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
                 let output = String(data: data, encoding: .utf8) ?? ""
                 await MainActor.run {
                     if process.terminationStatus == 0 {
-                        model.saveClaudeCodeResponse(output, projectName: projectName, for: recordingId)
+                        self.model.saveClaudeCodeResponse(output, projectName: projectName, for: recordingId)
                     }
-                    sendingClaudeCodeIDs.remove(recordingId)
+                    self.sendingClaudeCodeIDs.remove(recordingId)
                 }
             } catch {
-                await MainActor.run { sendingClaudeCodeIDs.remove(recordingId) }
+                await MainActor.run { self.sendingClaudeCodeIDs.remove(recordingId) }
             }
         }
     }
