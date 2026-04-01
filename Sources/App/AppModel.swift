@@ -128,12 +128,19 @@ final class AppModel: ObservableObject {
             dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
             let createdAt = dateFormatter.date(from: folderName) ?? Date()
 
-            // Get duration from audio file if it exists
+            // Get duration from audio file or estimate from chunks
             var duration: Double = 0
             if hasAudio {
-                let asset = AVURLAsset(url: audioURL)
-                duration = CMTimeGetSeconds(asset.duration)
-                if duration.isNaN || duration <= 0 { duration = 0 }
+                // Use AVAudioFile for synchronous duration reading
+                if let audioFile = try? AVAudioFile(forReading: audioURL) {
+                    duration = Double(audioFile.length) / audioFile.fileFormat.sampleRate
+                }
+            }
+            if duration <= 0 && hasChunks {
+                // Estimate: ~60 seconds per chunk
+                let chunkCount = (try? fm.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))?
+                    .filter({ $0.lastPathComponent.hasPrefix("chunk") && $0.pathExtension == "m4a" }).count ?? 0
+                duration = Double(chunkCount) * 60.0
             }
 
             let recording = Recording(
