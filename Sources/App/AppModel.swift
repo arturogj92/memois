@@ -162,7 +162,6 @@ final class AppModel: ObservableObject {
     }
 
     private func startRecording() {
-        guard !isSavingRecording else { return }
         sessionState = .recording
         statusMessage = "Recording..."
         recordingStartedAt = Date()
