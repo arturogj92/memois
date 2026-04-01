@@ -38,7 +38,7 @@ struct MainWindowView: View {
     @State private var selectedRecording: Recording?
     @State private var editingNameID: UUID?
     @State private var editingNameText = ""
-    @State private var sendingClaudeCodeID: UUID?
+    @State private var sendingClaudeCodeIDs: Set<UUID> = []
 
     private enum SidebarTab: String, CaseIterable, Identifiable {
         case recordings = "Recordings"
@@ -1283,7 +1283,7 @@ struct MainWindowView: View {
     // MARK: - Send to Claude Code (from recording list)
 
     private func sendToClaudeCodeMenu(for recording: Recording) -> some View {
-        let isSending = sendingClaudeCodeID == recording.id
+        let isSending = sendingClaudeCodeIDs.contains(recording.id)
         let wasSent = recording.claudeCodeSentAt != nil
 
         return Menu {
@@ -1317,8 +1317,12 @@ struct MainWindowView: View {
                         .controlSize(.small)
                         .scaleEffect(0.6)
                 } else {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 10))
+                    Canvas { context, size in
+                        if let img = NSImage(named: "ClaudeCode") {
+                            context.draw(Image(nsImage: img), in: CGRect(origin: .zero, size: size))
+                        }
+                    }
+                    .frame(width: 12, height: 12)
                 }
                 Text(isSending ? "Sending..." : wasSent ? "Sent" : "Claude")
                     .font(.system(size: 11, weight: .medium))
@@ -1337,8 +1341,8 @@ struct MainWindowView: View {
     }
 
     private func sendRecordingToClaudeCode(_ recording: Recording, directory: String, projectName: String) {
-        guard sendingClaudeCodeID == nil else { return }
-        sendingClaudeCodeID = recording.id
+        guard !sendingClaudeCodeIDs.contains(recording.id) else { return }
+        sendingClaudeCodeIDs.insert(recording.id)
 
         // Build prompt
         let speakerNames = model.loadSpeakerNames(for: recording)
@@ -1364,7 +1368,7 @@ struct MainWindowView: View {
             let paths = ["\(NSHomeDirectory())/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(NSHomeDirectory())/.claude/local/claude"]
             guard let execPath = paths.first(where: { FileManager.default.fileExists(atPath: $0) }),
                   FileManager.default.fileExists(atPath: directory) else {
-                await MainActor.run { sendingClaudeCodeID = nil }
+                await MainActor.run { sendingClaudeCodeIDs.remove(recordingId) }
                 return
             }
 
@@ -1385,10 +1389,10 @@ struct MainWindowView: View {
                     if process.terminationStatus == 0 {
                         model.saveClaudeCodeResponse(output, projectName: projectName, for: recordingId)
                     }
-                    sendingClaudeCodeID = nil
+                    sendingClaudeCodeIDs.remove(recordingId)
                 }
             } catch {
-                await MainActor.run { sendingClaudeCodeID = nil }
+                await MainActor.run { sendingClaudeCodeIDs.remove(recordingId) }
             }
         }
     }
