@@ -76,6 +76,9 @@ final class AppModel: ObservableObject {
             recordingStore.save(recordings)
         }
 
+        // Recover orphaned recording folders not registered in recordings.json
+        recoverOrphanedRecordings()
+
         audioRecorder.onMicLevel = { [weak self] level in
             Task { @MainActor [weak self] in
                 self?.micLevel = level
@@ -93,6 +96,67 @@ final class AppModel: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             self?.refreshPermissions()
+        }
+    }
+
+    /// Scan Recordings directory for folders not tracked in recordings.json and recover them
+    private func recoverOrphanedRecordings() {
+        let recordingsDir = Recording.recordingsDirectory
+        let fm = FileManager.default
+        guard let folders = try? fm.contentsOfDirectory(at: recordingsDir, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+
+        let knownFolders = Set(recordings.compactMap(\.folderName))
+        var didRecover = false
+
+        for folderURL in folders {
+            guard (try? folderURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            let folderName = folderURL.lastPathComponent
+
+            // Skip if already known
+            guard !knownFolders.contains(folderName) else { continue }
+
+            // Check if it has recording.m4a or chunk files
+            let audioURL = folderURL.appendingPathComponent("recording.m4a")
+            let hasAudio = fm.fileExists(atPath: audioURL.path)
+            let hasChunks = (try? fm.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil))?
+                .contains(where: { $0.lastPathComponent.hasPrefix("chunk") && $0.pathExtension == "m4a" }) ?? false
+
+            guard hasAudio || hasChunks else { continue }
+
+            // Parse date from folder name (format: "2026-04-01_15-31-03")
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+            let createdAt = dateFormatter.date(from: folderName) ?? Date()
+
+            // Get duration from audio file if it exists
+            var duration: Double = 0
+            if hasAudio {
+                let asset = AVURLAsset(url: audioURL)
+                duration = CMTimeGetSeconds(asset.duration)
+                if duration.isNaN || duration <= 0 { duration = 0 }
+            }
+
+            let recording = Recording(
+                id: UUID(),
+                createdAt: createdAt,
+                durationSeconds: duration,
+                audioFileName: "recording.m4a",
+                folderName: folderName,
+                name: nil,
+                transcriptionFileName: nil,
+                transcriptionStatus: .none,
+                transcriptionModel: nil,
+                speakerCount: nil
+            )
+
+            recordings.append(recording)
+            didRecover = true
+        }
+
+        if didRecover {
+            // Sort by date descending
+            recordings.sort { $0.createdAt > $1.createdAt }
+            recordingStore.save(recordings)
         }
     }
 
