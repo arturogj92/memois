@@ -28,6 +28,7 @@ struct RecordingDetailView: View {
     @State private var showingClaudeCodeResponse = false
     @State private var newProjectName = ""
     @State private var showingNewProjectForm = false
+    @State private var filterBySpeaker: String?
 
     private var hasUtterances: Bool { !utterances.isEmpty }
 
@@ -97,25 +98,48 @@ struct RecordingDetailView: View {
                     ], spacing: 8) {
                         ForEach(detectedSpeakers, id: \.self) { speaker in
                             HStack(spacing: 6) {
-                                Text("\(speaker)")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.4))
-                                    .frame(width: 14)
+                                Button {
+                                    if filterBySpeaker == speaker {
+                                        filterBySpeaker = nil
+                                    } else {
+                                        filterBySpeaker = speaker
+                                    }
+                                } label: {
+                                    Text("\(speaker)")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(filterBySpeaker == speaker ? Color.brandCyan : .white.opacity(0.4))
+                                        .frame(width: 14)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Filter by this speaker")
 
                                 TextField("Name", text: Binding(
                                     get: { editingSpeakerNames[speaker] ?? "" },
-                                    set: { editingSpeakerNames[speaker] = $0 }
+                                    set: { newValue in
+                                        editingSpeakerNames[speaker] = newValue
+                                        speakerNames[speaker] = newValue
+                                        model.saveSpeakerNames(speakerNames, for: recording)
+                                    }
                                 ))
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(size: 12))
-                                .onSubmit {
-                                    commitSpeakerNames()
-                                }
                             }
                         }
                     }
-                    .onDisappear {
-                        commitSpeakerNames()
+
+                    if filterBySpeaker != nil {
+                        Button {
+                            filterBySpeaker = nil
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 10))
+                                Text("Clear filter")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundStyle(Color.brandCyan.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(10)
@@ -312,10 +336,15 @@ struct RecordingDetailView: View {
 
     /// Which utterances to show (filtered if searching, all otherwise)
     private var utterancesForDisplay: [TranscriptUtterance] {
-        if searchText.isEmpty {
-            return utterances
+        var result = utterances
+        if let speaker = filterBySpeaker {
+            result = result.filter { $0.speaker == speaker }
         }
-        return filteredUtterances
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            result = result.filter { $0.text.lowercased().contains(query) }
+        }
+        return result
     }
 
     private func isCurrentSearchMatch(_ utterance: TranscriptUtterance) -> Bool {
@@ -446,19 +475,22 @@ struct RecordingDetailView: View {
 
     // MARK: - Send to Claude Code
 
-    /// The default target directory: first saved project, or nil
-    private var defaultSendDirectory: String? {
-        model.settings.claudeCodeProjects.first?.directoryPath
-    }
-
     private var sendToClaudeCodeButton: some View {
         HStack(spacing: 0) {
-            // Main button: sends directly to first project (or opens picker if none)
-            Button {
-                if let dir = defaultSendDirectory {
-                    sendToClaudeCode(directory: dir)
-                } else {
-                    // No projects saved - open folder picker
+            // Send to Claude Code menu
+            Menu {
+                if !model.settings.claudeCodeProjects.isEmpty {
+                    ForEach(model.settings.claudeCodeProjects) { project in
+                        Button {
+                            sendToClaudeCode(directory: project.directoryPath)
+                        } label: {
+                            Label(project.name, systemImage: "folder")
+                        }
+                    }
+                    Divider()
+                }
+
+                Button {
                     let panel = NSOpenPanel()
                     panel.canChooseDirectories = true
                     panel.canChooseFiles = false
@@ -467,6 +499,14 @@ struct RecordingDetailView: View {
                     if panel.runModal() == .OK, let url = panel.url {
                         sendToClaudeCode(directory: url.path)
                     }
+                } label: {
+                    Label("Choose Directory...", systemImage: "folder.badge.plus")
+                }
+
+                Button {
+                    showingNewProjectForm = true
+                } label: {
+                    Label("New Project...", systemImage: "plus")
                 }
             } label: {
                 HStack(spacing: 4) {
@@ -482,74 +522,21 @@ struct RecordingDetailView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 14, height: 14)
-                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                     }
-                    if let project = model.settings.claudeCodeProjects.first, !sendingToClaudeCode && !claudeCodeSent {
-                        Text("Send to \(project.name)")
-                            .font(.system(size: 12, weight: .medium))
-                    } else {
-                        Text(sendingToClaudeCode ? "Sending..." : claudeCodeSent ? "Sent" : "Send to Claude Code")
-                            .font(.system(size: 12, weight: .medium))
-                    }
+                    Text(sendingToClaudeCode ? "Sending..." : claudeCodeSent ? "Sent" : "Send to Claude Code")
+                        .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundStyle(claudeCodeSent ? Color.brandCyan : .white.opacity(0.8))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(claudeCodeSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.08))
-                )
-            }
-            .buttonStyle(.plain)
-            .disabled(sendingToClaudeCode)
-
-            // Dropdown arrow: choose different project
-            Menu {
-                if !model.settings.claudeCodeProjects.isEmpty {
-                    Section("Saved Projects") {
-                        ForEach(model.settings.claudeCodeProjects) { project in
-                            Button {
-                                sendToClaudeCode(directory: project.directoryPath)
-                            } label: {
-                                Label(project.name, systemImage: "terminal")
-                            }
-                        }
-                    }
-                }
-
-                Section {
-                    Button {
-                        let panel = NSOpenPanel()
-                        panel.canChooseDirectories = true
-                        panel.canChooseFiles = false
-                        panel.allowsMultipleSelection = false
-                        panel.message = "Select directory for Claude Code"
-                        if panel.runModal() == .OK, let url = panel.url {
-                            sendToClaudeCode(directory: url.path)
-                        }
-                    } label: {
-                        Label("Choose Directory...", systemImage: "folder")
-                    }
-
-                    Button {
-                        showingNewProjectForm = true
-                    } label: {
-                        Label("New Project...", systemImage: "plus")
-                    }
-                }
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(.white.opacity(0.08))
-                    )
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(claudeCodeSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.08))
+            )
             .disabled(sendingToClaudeCode)
 
             // View Response button
