@@ -518,10 +518,12 @@ struct RecordingDetailView: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 11))
                     } else {
-                        Image("ClaudeCode")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 14, height: 14)
+                        Canvas { context, size in
+                            if let img = NSImage(named: "ClaudeCode") {
+                                context.draw(Image(nsImage: img), in: CGRect(origin: .zero, size: size))
+                            }
+                        }
+                        .frame(width: 14, height: 14)
                     }
                     Text(sendingToClaudeCode ? "Sending..." : claudeCodeSent ? "Sent" : "Send to Claude Code")
                         .font(.system(size: 12, weight: .medium))
