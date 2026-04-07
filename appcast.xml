@@ -7,6 +7,28 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.8.0</title>
+            <description><![CDATA[
+<h2>What's New in 0.8.0</h2>
+<ul>
+    <li><strong>Send transcripts to Claude Code or Codex</strong> — Run either coding agent directly from a recording, choose a saved project, and keep the response alongside the meeting.</li>
+    <li><strong>Better headless agent setup</strong> — Configure saved project directories, override CLI executable paths when auto-detection fails, and reveal the transcript directly in Finder.</li>
+    <li><strong>Cleaner transcript workflow</strong> — Real-time speaker names, speaker filtering, improved action buttons, and smoother agent actions in the recordings list.</li>
+    <li><strong>More resilient recordings</strong> — Auto-recover orphaned recordings on launch, allow back-to-back recordings while the previous save finishes, and show progress while repairing audio.</li>
+</ul>
+            ]]></description>
+            <pubDate>Tue, 07 Apr 2026 10:02:51 +0200</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.8.0/Memois-v0.8.0-macOS.zip"
+                sparkle:version="5"
+                sparkle:shortVersionString="0.8.0"
+                length="4471643"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.7.0</title>
             <description><![CDATA[
 <h2>What's New in 0.7.0</h2>
