@@ -97,6 +97,26 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var codexProjects: [CodexProject] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(codexProjects) {
+                userDefaults.set(data, forKey: Keys.codexProjects)
+            }
+        }
+    }
+
+    @Published var claudeExecutablePathOverride: String {
+        didSet {
+            persistOptionalString(claudeExecutablePathOverride, forKey: Keys.claudeExecutablePathOverride)
+        }
+    }
+
+    @Published var codexExecutablePathOverride: String {
+        didSet {
+            persistOptionalString(codexExecutablePathOverride, forKey: Keys.codexExecutablePathOverride)
+        }
+    }
+
     private let userDefaults: UserDefaults
 
     init(userDefaults: UserDefaults = .standard) {
@@ -131,6 +151,12 @@ final class SettingsStore: ObservableObject {
            let projects = try? JSONDecoder().decode([ClaudeCodeProject].self, from: data) {
             self.claudeCodeProjects = projects
         }
+        if let data = userDefaults.data(forKey: Keys.codexProjects),
+           let projects = try? JSONDecoder().decode([CodexProject].self, from: data) {
+            self.codexProjects = projects
+        }
+        self.claudeExecutablePathOverride = userDefaults.string(forKey: Keys.claudeExecutablePathOverride) ?? ""
+        self.codexExecutablePathOverride = userDefaults.string(forKey: Keys.codexExecutablePathOverride) ?? ""
     }
 
     var shortcutModifierFlags: CGEventFlags {
@@ -180,6 +206,65 @@ final class SettingsStore: ObservableObject {
         ("best", "Best (Universal-3 Pro)"),
         ("nano", "Nano (Fast & cheap)"),
     ]
+
+    func projects(for agent: HeadlessCodingAgent) -> [HeadlessCodingProject] {
+        switch agent {
+        case .claudeCode: claudeCodeProjects
+        case .codex: codexProjects
+        }
+    }
+
+    func addProject(_ project: HeadlessCodingProject, for agent: HeadlessCodingAgent) {
+        switch agent {
+        case .claudeCode:
+            claudeCodeProjects.append(project)
+        case .codex:
+            codexProjects.append(project)
+        }
+    }
+
+    func removeProject(id: UUID, for agent: HeadlessCodingAgent) {
+        switch agent {
+        case .claudeCode:
+            claudeCodeProjects.removeAll { $0.id == id }
+        case .codex:
+            codexProjects.removeAll { $0.id == id }
+        }
+    }
+
+    func executablePathOverride(for agent: HeadlessCodingAgent) -> String? {
+        let value: String
+        switch agent {
+        case .claudeCode:
+            value = claudeExecutablePathOverride
+        case .codex:
+            value = codexExecutablePathOverride
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func setExecutablePathOverride(_ path: String?, for agent: HeadlessCodingAgent) {
+        let normalized = path?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        switch agent {
+        case .claudeCode:
+            claudeExecutablePathOverride = normalized
+        case .codex:
+            codexExecutablePathOverride = normalized
+        }
+    }
+
+    private func persistOptionalString(_ value: String, forKey key: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            userDefaults.removeObject(forKey: key)
+        } else {
+            userDefaults.set(trimmed, forKey: key)
+        }
+    }
 }
 
 private enum Keys {
@@ -203,4 +288,7 @@ private enum Keys {
     static let startAtLogin = "settings.startAtLogin"
     static let hideDockIcon = "settings.hideDockIcon"
     static let claudeCodeProjects = "settings.claudeCodeProjects"
+    static let codexProjects = "settings.codexProjects"
+    static let claudeExecutablePathOverride = "settings.claudeExecutablePathOverride"
+    static let codexExecutablePathOverride = "settings.codexExecutablePathOverride"
 }

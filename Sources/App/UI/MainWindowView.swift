@@ -38,7 +38,9 @@ struct MainWindowView: View {
     @State private var selectedRecording: Recording?
     @State private var editingNameID: UUID?
     @State private var editingNameText = ""
-    @State private var sendingClaudeCodeIDs: Set<UUID> = []
+    @State private var sendingRecordingIDsByAgent: [HeadlessCodingAgent: Set<UUID>] = [:]
+    @State private var executableResolutions: [HeadlessCodingAgent: HeadlessCodingAgentRunner.ExecutableResolution] = [:]
+    @State private var isRefreshingExecutableResolutions = false
 
     private enum SidebarTab: String, CaseIterable, Identifiable {
         case recordings = "Recordings"
@@ -513,25 +515,22 @@ struct MainWindowView: View {
             }
 
             HStack(spacing: 8) {
-                // Show in Finder button
                 Button {
                     model.showInFinder(recording: recording)
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "folder")
-                            .font(.system(size: 10))
-                        Text("Finder")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundStyle(.white.opacity(0.5))
+                    Image(systemName: "folder")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .frame(width: 16, height: 16)
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(.white.opacity(0.06))
                 )
+                .help(recording.transcriptionURL != nil ? "Reveal transcript in Finder" : "Reveal recording in Finder")
 
                 Spacer()
 
@@ -589,39 +588,40 @@ struct MainWindowView: View {
                             NSPasteboard.general.setString(text, forType: .string)
                         }
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "doc.on.doc")
-                                .font(.system(size: 10))
-                            Text("Copy")
-                                .font(.system(size: 11, weight: .medium))
-                        }
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(width: 16, height: 16)
                         .foregroundStyle(.white.opacity(0.8))
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 7)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(Color.brandYellow.opacity(0.15))
                     )
+                    .help("Copy transcript")
 
-                    // Send to Claude Code
-                    sendToClaudeCodeMenu(for: recording)
+                    ForEach(HeadlessCodingAgent.allCases) { agent in
+                        sendToAgentMenu(agent, for: recording)
+                    }
 
                     Button {
                         selectedRecording = recording
                     } label: {
-                        Text("Open")
+                        Image(systemName: "doc.text.magnifyingglass")
                             .font(.system(size: 11, weight: .medium))
+                            .frame(width: 16, height: 16)
                             .foregroundStyle(.white.opacity(0.8))
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 7)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(Color.brandGreen.opacity(0.2))
                     )
+                    .help("Open transcript")
                 }
 
                 Button {
@@ -633,7 +633,8 @@ struct MainWindowView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 6)
-                .padding(.vertical, 4)
+                .padding(.vertical, 7)
+                .help("Delete recording")
             }
         }
         .padding(14)
@@ -1064,43 +1065,14 @@ struct MainWindowView: View {
                 }
             }
 
-            // Claude Code Projects
-            card {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text("Claude Code Projects")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.9))
-                        Spacer()
-                        Button {
-                            addClaudeCodeProject()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 9))
-                                Text("Add")
-                                    .font(.system(size: 11, weight: .medium))
-                            }
-                        }
-                        .controlSize(.small)
-                    }
-
-                    Text("Saved directories for sending transcripts to Claude Code")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.3))
-
-                    if settings.claudeCodeProjects.isEmpty {
-                        Text("No projects configured")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.2))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                    } else {
-                        ForEach(settings.claudeCodeProjects) { project in
-                            claudeCodeProjectRow(project)
-                        }
-                    }
+            ForEach(HeadlessCodingAgent.allCases) { agent in
+                card {
+                    headlessCodingProjectsSection(for: agent)
                 }
+            }
+
+            card {
+                executablePathsSection
             }
 
             // Sounds
@@ -1211,6 +1183,13 @@ struct MainWindowView: View {
                 }
             }
         }
+        .onAppear(perform: refreshExecutableResolutions)
+        .onChange(of: settings.claudeExecutablePathOverride) {
+            refreshExecutableResolutions()
+        }
+        .onChange(of: settings.codexExecutablePathOverride) {
+            refreshExecutableResolutions()
+        }
     }
 
     private func soundRow(_ label: String, selection: Binding<String>) -> some View {
@@ -1244,20 +1223,241 @@ struct MainWindowView: View {
         }
     }
 
-    private func addClaudeCodeProject() {
+    private func headlessCodingProjectsSection(for agent: HeadlessCodingAgent) -> some View {
+        let projects = settings.projects(for: agent)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(agent.projectSettingsTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                Spacer()
+                Button {
+                    addProject(for: agent)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 9))
+                        Text("Add")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+                .controlSize(.small)
+            }
+
+            Text(agent.projectSettingsDescription)
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.3))
+
+            if projects.isEmpty {
+                Text("No projects configured")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.2))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(projects) { project in
+                    headlessCodingProjectRow(project, agent: agent)
+                }
+            }
+        }
+    }
+
+    private var executablePathsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("CLI Paths")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                Spacer()
+                Button("Refresh") {
+                    refreshExecutableResolutions()
+                }
+                .controlSize(.small)
+            }
+
+            Text("Auto-detect the Claude and Codex executables, or override them manually.")
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.3))
+
+            ForEach(HeadlessCodingAgent.allCases) { agent in
+                executablePathRow(for: agent)
+            }
+        }
+    }
+
+    private func executablePathRow(for agent: HeadlessCodingAgent) -> some View {
+        let resolution = executableResolutions[agent]
+        let overridePath = settings.executablePathOverride(for: agent)
+        let overrideText = Binding(
+            get: { overridePath ?? "" },
+            set: { settings.setExecutablePathOverride($0, for: agent) }
+        )
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(agent.displayName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+
+                if isRefreshingExecutableResolutions && resolution == nil {
+                    executablePathBadge("Scanning", color: .white.opacity(0.7))
+                } else if resolution?.isUsingOverride == true {
+                    executablePathBadge("Custom", color: .brandCyan)
+                } else if resolution?.selectedPath != nil {
+                    executablePathBadge("Auto", color: .brandGreen)
+                } else {
+                    executablePathBadge("Missing", color: .brandYellow)
+                }
+
+                Spacer()
+            }
+
+            executablePathInfoRow(
+                label: "Using",
+                value: resolution?.selectedPath ?? (isRefreshingExecutableResolutions ? "Scanning..." : "Not found")
+            )
+
+            executablePathInfoRow(
+                label: "Detected",
+                value: resolution?.autoDetectedPath ?? (isRefreshingExecutableResolutions ? "Scanning..." : "Not found")
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Custom override")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
+
+                HStack(spacing: 8) {
+                    TextField("Leave empty to use auto-detected path", text: overrideText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.surfaceInput)
+                        )
+
+                    Button("Browse") {
+                        chooseExecutablePath(for: agent)
+                    }
+                    .controlSize(.small)
+
+                    Button("Clear") {
+                        settings.setExecutablePathOverride(nil, for: agent)
+                    }
+                    .controlSize(.small)
+                    .disabled(settings.executablePathOverride(for: agent) == nil)
+                }
+            }
+
+            if resolution?.overridePath != nil && resolution?.isUsingOverride == false {
+                Text("The custom path was not found or is not executable, so Memois will use the detected path instead.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.brandYellow.opacity(0.85))
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func executablePathInfoRow(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+
+            Text(value)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.72))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.surfaceInput)
+                )
+                .textSelection(.enabled)
+        }
+    }
+
+    private func executablePathBadge(_ title: String, color: Color) -> some View {
+        Text(title)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(color.opacity(0.12))
+            )
+    }
+
+    private func addProject(for agent: HeadlessCodingAgent) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.message = "Select a project directory"
+        panel.message = agent.chooseDirectoryMessage
         if panel.runModal() == .OK, let url = panel.url {
             let name = url.lastPathComponent
-            let project = ClaudeCodeProject(name: name, directoryPath: url.path)
-            settings.claudeCodeProjects.append(project)
+            let project = HeadlessCodingProject(name: name, directoryPath: url.path)
+            settings.addProject(project, for: agent)
         }
     }
 
-    private func claudeCodeProjectRow(_ project: ClaudeCodeProject) -> some View {
+    private func chooseExecutablePath(for agent: HeadlessCodingAgent) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.treatsFilePackagesAsDirectories = false
+        panel.message = "Select the \(agent.displayName) executable"
+
+        let currentPath = settings.executablePathOverride(for: agent)
+            ?? executableResolutions[agent]?.selectedPath
+        if let currentPath {
+            let url = URL(fileURLWithPath: currentPath)
+            panel.directoryURL = url.deletingLastPathComponent()
+            panel.nameFieldStringValue = url.lastPathComponent
+        }
+
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.setExecutablePathOverride(url.path, for: agent)
+        }
+    }
+
+    private func refreshExecutableResolutions() {
+        let overrides = Dictionary(
+            uniqueKeysWithValues: HeadlessCodingAgent.allCases.map { agent in
+                (agent, settings.executablePathOverride(for: agent))
+            }
+        )
+
+        isRefreshingExecutableResolutions = true
+
+        Task.detached(priority: .userInitiated) {
+            let resolved = Dictionary(
+                uniqueKeysWithValues: HeadlessCodingAgent.allCases.map { agent in
+                    (
+                        agent,
+                        HeadlessCodingAgentRunner.resolveExecutablePath(
+                            for: agent,
+                            overridePath: overrides[agent] ?? nil
+                        )
+                    )
+                }
+            )
+
+            await MainActor.run {
+                self.executableResolutions = resolved
+                self.isRefreshingExecutableResolutions = false
+            }
+        }
+    }
+
+    private func headlessCodingProjectRow(_ project: HeadlessCodingProject, agent: HeadlessCodingAgent) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "terminal")
                 .font(.system(size: 10))
@@ -1278,7 +1478,7 @@ struct MainWindowView: View {
             Spacer()
 
             Button {
-                settings.claudeCodeProjects.removeAll { $0.id == project.id }
+                settings.removeProject(id: project.id, for: agent)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9))
@@ -1289,17 +1489,19 @@ struct MainWindowView: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - Send to Claude Code (from recording list)
+    // MARK: - Send To Agent (from recording list)
 
-    private func sendToClaudeCodeMenu(for recording: Recording) -> some View {
-        let isSending = sendingClaudeCodeIDs.contains(recording.id)
-        let wasSent = recording.claudeCodeSentAt != nil
+    private func sendToAgentMenu(_ agent: HeadlessCodingAgent, for recording: Recording) -> some View {
+        let isSending = isSending(recording.id, via: agent)
+        let wasSent = recording.sentAt(for: agent) != nil
 
         return Menu {
-            if !settings.claudeCodeProjects.isEmpty {
-                ForEach(settings.claudeCodeProjects) { project in
+            let projects = settings.projects(for: agent)
+
+            if !projects.isEmpty {
+                ForEach(projects) { project in
                     Button {
-                        sendRecordingToClaudeCode(recording, directory: project.directoryPath, projectName: project.name)
+                        sendRecordingToAgent(agent, recording: recording, directory: project.directoryPath, projectName: project.name)
                     } label: {
                         Label(project.name, systemImage: "folder")
                     }
@@ -1312,98 +1514,97 @@ struct MainWindowView: View {
                 panel.canChooseDirectories = true
                 panel.canChooseFiles = false
                 panel.allowsMultipleSelection = false
-                panel.message = "Select directory for Claude Code"
+                panel.message = agent.chooseDirectoryMessage
                 if panel.runModal() == .OK, let url = panel.url {
-                    sendRecordingToClaudeCode(recording, directory: url.path, projectName: url.lastPathComponent)
+                    sendRecordingToAgent(agent, recording: recording, directory: url.path, projectName: url.lastPathComponent)
                 }
             } label: {
                 Label("Choose Directory...", systemImage: "folder.badge.plus")
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 0) {
                 if isSending {
                     ProgressView()
                         .controlSize(.small)
                         .scaleEffect(0.6)
                 } else {
-                    Canvas { context, size in
-                        if let img = NSImage(named: "ClaudeCode") {
-                            context.draw(Image(nsImage: img), in: CGRect(origin: .zero, size: size))
-                        }
-                    }
-                    .frame(width: 12, height: 12)
+                    agentIcon(agent, size: 12)
                 }
-                Text(isSending ? "Sending..." : wasSent ? "Sent" : "Claude")
-                    .font(.system(size: 11, weight: .medium))
             }
             .foregroundStyle(.white.opacity(0.8))
+            .frame(width: 16, height: 16)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(wasSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.06))
         )
         .disabled(isSending)
-        .help(wasSent ? "Sent to \(recording.claudeCodeProject ?? "Claude Code")" : "Send to Claude Code")
+        .help(
+            isSending
+                ? "Sending to \(agent.displayName)"
+                : wasSent
+                    ? "Sent to \(recording.projectName(for: agent) ?? agent.displayName)"
+                    : agent.buttonTitle
+        )
     }
 
-    private func sendRecordingToClaudeCode(_ recording: Recording, directory: String, projectName: String) {
-        guard !sendingClaudeCodeIDs.contains(recording.id) else { return }
-        sendingClaudeCodeIDs.insert(recording.id)
-
-        // Build prompt
-        let speakerNames = model.loadSpeakerNames(for: recording)
-        let rawTranscript = model.readTranscript(for: recording) ?? ""
-        let transcript = model.applyingSpeakerNames(speakerNames, to: rawTranscript)
-
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .long
-        dateFormatter.timeStyle = .short
-        let dateStr = dateFormatter.string(from: recording.createdAt)
-        let recordingName = recording.name ?? "Untitled Recording"
-        let speakerList = speakerNames.values.filter { !$0.isEmpty }.joined(separator: ", ")
-
-        var prompt = "Here is the transcript from a meeting recorded on \(dateStr), titled '\(recordingName)'.\n\n"
-        if !speakerList.isEmpty {
-            prompt += "Speakers: \(speakerList)\n\n"
+    private func agentIcon(_ agent: HeadlessCodingAgent, size: CGFloat) -> some View {
+        Canvas { context, canvasSize in
+            if let image = NSImage(named: agent.iconAssetName) {
+                context.draw(Image(nsImage: image), in: CGRect(origin: .zero, size: canvasSize))
+            }
         }
-        prompt += transcript
+        .frame(width: size, height: size)
+    }
+
+    private func isSending(_ recordingID: UUID, via agent: HeadlessCodingAgent) -> Bool {
+        sendingRecordingIDsByAgent[agent, default: []].contains(recordingID)
+    }
+
+    private func updateSendingState(_ isSending: Bool, recordingID: UUID, agent: HeadlessCodingAgent) {
+        var ids = sendingRecordingIDsByAgent[agent, default: []]
+        if isSending {
+            ids.insert(recordingID)
+        } else {
+            ids.remove(recordingID)
+        }
+        sendingRecordingIDsByAgent[agent] = ids
+    }
+
+    private func sendRecordingToAgent(
+        _ agent: HeadlessCodingAgent,
+        recording: Recording,
+        directory: String,
+        projectName: String
+    ) {
+        guard !isSending(recording.id, via: agent) else { return }
+        updateSendingState(true, recordingID: recording.id, agent: agent)
+
+        let prompt = model.buildHeadlessCodingPrompt(for: recording)
 
         let recordingId = recording.id
+        let executablePathOverride = settings.executablePathOverride(for: agent)
 
         Task.detached(priority: .userInitiated) {
-            let home = NSHomeDirectory()
-            let paths = ["\(home)/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(home)/.claude/local/claude"]
-            guard let execPath = paths.first(where: { FileManager.default.fileExists(atPath: $0) }),
-                  FileManager.default.fileExists(atPath: directory) else {
-                await MainActor.run { self.sendingClaudeCodeIDs.remove(recordingId) }
-                return
-            }
+            HeadlessCodingAgentRunner.log(
+                "Send to \(agent.displayName): directory=\(directory), prompt length=\(prompt.count)",
+                agent: agent
+            )
+            let (success, output) = await HeadlessCodingAgentRunner.run(
+                agent,
+                prompt: prompt,
+                directory: directory,
+                executablePathOverride: executablePathOverride
+            )
 
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: execPath)
-            process.arguments = ["--dangerously-skip-permissions", "-p", prompt]
-            process.currentDirectoryURL = URL(fileURLWithPath: directory)
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-
-            do {
-                try process.run()
-                // Read output before waitUntilExit to avoid pipe buffer deadlock
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                let output = String(data: data, encoding: .utf8) ?? ""
-                await MainActor.run {
-                    if process.terminationStatus == 0 {
-                        self.model.saveClaudeCodeResponse(output, projectName: projectName, for: recordingId)
-                    }
-                    self.sendingClaudeCodeIDs.remove(recordingId)
+            await MainActor.run {
+                if success {
+                    self.model.saveHeadlessCodingResponse(output, projectName: projectName, for: recordingId, agent: agent)
                 }
-            } catch {
-                await MainActor.run { self.sendingClaudeCodeIDs.remove(recordingId) }
+                self.updateSendingState(false, recordingID: recordingId, agent: agent)
             }
         }
     }

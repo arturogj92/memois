@@ -1,6 +1,6 @@
 import Foundation
 
-struct ClaudeCodeProject: Codable, Identifiable, Equatable {
+struct HeadlessCodingProject: Codable, Identifiable, Equatable {
     let id: UUID
     var name: String
     var directoryPath: String
@@ -9,6 +9,89 @@ struct ClaudeCodeProject: Codable, Identifiable, Equatable {
         self.id = id
         self.name = name
         self.directoryPath = directoryPath
+    }
+}
+
+typealias ClaudeCodeProject = HeadlessCodingProject
+typealias CodexProject = HeadlessCodingProject
+
+enum HeadlessCodingAgent: String, CaseIterable, Identifiable {
+    case claudeCode
+    case codex
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .claudeCode: "Claude Code"
+        case .codex: "Codex"
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .claudeCode: "Claude"
+        case .codex: "Codex"
+        }
+    }
+
+    var buttonTitle: String {
+        "Send to \(displayName)"
+    }
+
+    var iconAssetName: String {
+        switch self {
+        case .claudeCode: "ClaudeCode"
+        case .codex: "Codex"
+        }
+    }
+
+    var projectSettingsTitle: String {
+        "\(displayName) Projects"
+    }
+
+    var projectSettingsDescription: String {
+        "Saved directories for sending transcripts to \(displayName)"
+    }
+
+    var responseTitle: String {
+        "\(displayName) Response"
+    }
+
+    var newProjectTitle: String {
+        "New \(displayName) Project"
+    }
+
+    var chooseDirectoryMessage: String {
+        "Select directory for \(displayName)"
+    }
+
+    var executableName: String {
+        switch self {
+        case .claudeCode: "claude"
+        case .codex: "codex"
+        }
+    }
+
+    var responseFileName: String {
+        switch self {
+        case .claudeCode: "claude_code_response.txt"
+        case .codex: "codex_response.txt"
+        }
+    }
+
+    var logFileName: String {
+        switch self {
+        case .claudeCode: "claude_code_log.txt"
+        case .codex: "codex_log.txt"
+        }
+    }
+
+    var installHint: String {
+        switch self {
+        case .claudeCode: "Check that the directory exists and claude is installed."
+        case .codex: "Check that the directory exists and codex is installed and authenticated."
+        }
     }
 }
 
@@ -62,6 +145,8 @@ struct Recording: Codable, Identifiable {
     var transcriptionError: String?
     var claudeCodeSentAt: Date?
     var claudeCodeProject: String?
+    var codexSentAt: Date?
+    var codexProject: String?
 
     enum TranscriptionStatus: String, Codable {
         case none
@@ -101,11 +186,19 @@ struct Recording: Codable, Identifiable {
     }
 
     var claudeCodeResponseURL: URL {
-        folderURL.appendingPathComponent("claude_code_response.txt")
+        responseURL(for: .claudeCode)
     }
 
     var hasClaudeCodeResponse: Bool {
-        FileManager.default.fileExists(atPath: claudeCodeResponseURL.path)
+        hasResponse(for: .claudeCode)
+    }
+
+    var codexResponseURL: URL {
+        responseURL(for: .codex)
+    }
+
+    var hasCodexResponse: Bool {
+        hasResponse(for: .codex)
     }
 
     /// Screenshot image URLs found in this recording's folder
@@ -134,6 +227,28 @@ struct Recording: Codable, Identifiable {
         let minutes = Int(durationSeconds) / 60
         let seconds = Int(durationSeconds) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    func responseURL(for agent: HeadlessCodingAgent) -> URL {
+        folderURL.appendingPathComponent(agent.responseFileName)
+    }
+
+    func hasResponse(for agent: HeadlessCodingAgent) -> Bool {
+        FileManager.default.fileExists(atPath: responseURL(for: agent).path)
+    }
+
+    func sentAt(for agent: HeadlessCodingAgent) -> Date? {
+        switch agent {
+        case .claudeCode: claudeCodeSentAt
+        case .codex: codexSentAt
+        }
+    }
+
+    func projectName(for agent: HeadlessCodingAgent) -> String? {
+        switch agent {
+        case .claudeCode: claudeCodeProject
+        case .codex: codexProject
+        }
     }
 
     static var recordingsDirectory: URL {

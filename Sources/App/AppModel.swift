@@ -480,16 +480,45 @@ final class AppModel: ObservableObject {
         try? data.write(to: url, options: .atomic)
     }
 
-    func saveClaudeCodeResponse(_ response: String, projectName: String, for recordingId: UUID) {
+    func saveHeadlessCodingResponse(
+        _ response: String,
+        projectName: String,
+        for recordingId: UUID,
+        agent: HeadlessCodingAgent
+    ) {
         guard let index = recordings.firstIndex(where: { $0.id == recordingId }) else { return }
-        try? response.write(to: recordings[index].claudeCodeResponseURL, atomically: true, encoding: .utf8)
-        recordings[index].claudeCodeSentAt = Date()
-        recordings[index].claudeCodeProject = projectName
+        try? response.write(to: recordings[index].responseURL(for: agent), atomically: true, encoding: .utf8)
+
+        switch agent {
+        case .claudeCode:
+            recordings[index].claudeCodeSentAt = Date()
+            recordings[index].claudeCodeProject = projectName
+        case .codex:
+            recordings[index].codexSentAt = Date()
+            recordings[index].codexProject = projectName
+        }
+
         recordingStore.save(recordings)
     }
 
+    func loadHeadlessCodingResponse(for recording: Recording, agent: HeadlessCodingAgent) -> String? {
+        try? String(contentsOf: recording.responseURL(for: agent), encoding: .utf8)
+    }
+
+    func saveClaudeCodeResponse(_ response: String, projectName: String, for recordingId: UUID) {
+        saveHeadlessCodingResponse(response, projectName: projectName, for: recordingId, agent: .claudeCode)
+    }
+
     func loadClaudeCodeResponse(for recording: Recording) -> String? {
-        try? String(contentsOf: recording.claudeCodeResponseURL, encoding: .utf8)
+        loadHeadlessCodingResponse(for: recording, agent: .claudeCode)
+    }
+
+    func saveCodexResponse(_ response: String, projectName: String, for recordingId: UUID) {
+        saveHeadlessCodingResponse(response, projectName: projectName, for: recordingId, agent: .codex)
+    }
+
+    func loadCodexResponse(for recording: Recording) -> String? {
+        loadHeadlessCodingResponse(for: recording, agent: .codex)
     }
 
     func applyingSpeakerNames(_ names: [String: String], to transcript: String) -> String {
@@ -536,6 +565,28 @@ final class AppModel: ObservableObject {
         }
 
         return parts.joined(separator: "\n")
+    }
+
+    func buildHeadlessCodingPrompt(for recording: Recording) -> String {
+        let speakerNames = loadSpeakerNames(for: recording)
+        let rawTranscript = readTranscript(for: recording) ?? ""
+        let transcript = applyingSpeakerNames(speakerNames, to: rawTranscript)
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .long
+        dateFormatter.timeStyle = .short
+        let dateStr = dateFormatter.string(from: recording.createdAt)
+
+        let recordingName = recording.name ?? "Untitled Recording"
+        let speakerList = speakerNames.values.filter { !$0.isEmpty }.joined(separator: ", ")
+
+        var prompt = "Here is the transcript from a meeting recorded on \(dateStr), titled '\(recordingName)'.\n\n"
+        if !speakerList.isEmpty {
+            prompt += "Speakers: \(speakerList)\n\n"
+        }
+        prompt += transcript
+
+        return prompt
     }
 
     func renameRecording(id: UUID, name: String) {
@@ -705,7 +756,8 @@ final class AppModel: ObservableObject {
     }
 
     func showInFinder(recording: Recording) {
-        NSWorkspace.shared.selectFile(recording.audioURL.path, inFileViewerRootedAtPath: recording.audioURL.deletingLastPathComponent().path)
+        let fileURL = recording.transcriptionURL ?? recording.audioURL
+        NSWorkspace.shared.selectFile(fileURL.path, inFileViewerRootedAtPath: fileURL.deletingLastPathComponent().path)
     }
 
     private func fail(with message: String) {

@@ -5,6 +5,7 @@ private extension Color {
     static let surfaceCard = Color(red: 0.11, green: 0.11, blue: 0.13)
     static let surfaceInput = Color(red: 0.14, green: 0.14, blue: 0.16)
     static let brandCyan = Color(red: 0.0, green: 0.85, blue: 0.95)
+    static let brandGreen = Color(red: 0.3, green: 0.95, blue: 0.4)
 }
 
 struct RecordingDetailView: View {
@@ -21,13 +22,12 @@ struct RecordingDetailView: View {
     @State private var editingSpeakerNames: [String: String] = [:]
     @State private var searchText: String = ""
     @State private var searchMatchIndex: Int = 0
-    @State private var showingSendToClaudeCode = false
-    @State private var sendingToClaudeCode = false
-    @State private var claudeCodeSent = false
-    @State private var claudeCodeResponse = ""
-    @State private var showingClaudeCodeResponse = false
+    @State private var sendingAgents: Set<HeadlessCodingAgent> = []
+    @State private var sentAgents: Set<HeadlessCodingAgent> = []
+    @State private var agentResponses: [HeadlessCodingAgent: String] = [:]
+    @State private var responseAgent: HeadlessCodingAgent?
     @State private var newProjectName = ""
-    @State private var showingNewProjectForm = false
+    @State private var newProjectAgent: HeadlessCodingAgent?
     @State private var filterBySpeaker: String?
 
     private var hasUtterances: Bool { !utterances.isEmpty }
@@ -75,10 +75,29 @@ struct RecordingDetailView: View {
                 Spacer()
 
                 if recording.transcriptionStatus == .completed {
-                    sendToClaudeCodeButton
+                    HStack(spacing: 8) {
+                        ForEach(HeadlessCodingAgent.allCases) { agent in
+                            sendToAgentButton(agent)
+                        }
+                    }
                 }
 
-                Button("Done") { dismiss() }
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .frame(width: 16, height: 16)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(.white.opacity(0.08))
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Close transcript")
                     .keyboardShortcut(.cancelAction)
             }
 
@@ -310,10 +329,11 @@ struct RecordingDetailView: View {
             detectedSpeakers = extractSpeakers(from: loadedTranscript)
             screenshots = model.loadScreenshots(for: recording)
             utterances = loadedUtterances
-            // Load persisted Claude Code response
-            if let savedResponse = model.loadClaudeCodeResponse(for: recording) {
-                claudeCodeResponse = savedResponse
-                claudeCodeSent = true
+            for agent in HeadlessCodingAgent.allCases {
+                if let savedResponse = model.loadHeadlessCodingResponse(for: recording, agent: agent) {
+                    agentResponses[agent] = savedResponse
+                    sentAgents.insert(agent)
+                }
             }
         }
         .sheet(item: $selectedScreenshot) { screenshot in
@@ -321,6 +341,12 @@ struct RecordingDetailView: View {
                 image: NSImage(contentsOf: recording.screenshotURL(for: screenshot)),
                 timestamp: screenshot.formattedTimestamp
             )
+        }
+        .sheet(item: $responseAgent) { agent in
+            responseSheet(for: agent)
+        }
+        .sheet(item: $newProjectAgent) { agent in
+            newProjectSheet(for: agent)
         }
     }
 
@@ -473,16 +499,22 @@ struct RecordingDetailView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Send to Claude Code
+    // MARK: - Send To Agent
 
-    private var sendToClaudeCodeButton: some View {
-        HStack(spacing: 0) {
-            // Send to Claude Code menu
+    private func sendToAgentButton(_ agent: HeadlessCodingAgent) -> some View {
+        let isSending = sendingAgents.contains(agent)
+        let wasSent = sentAgents.contains(agent)
+        let response = agentResponses[agent] ?? ""
+        let projectName = recording.projectName(for: agent) ?? agent.displayName
+
+        return HStack(spacing: 0) {
             Menu {
-                if !model.settings.claudeCodeProjects.isEmpty {
-                    ForEach(model.settings.claudeCodeProjects) { project in
+                let projects = model.settings.projects(for: agent)
+
+                if !projects.isEmpty {
+                    ForEach(projects) { project in
                         Button {
-                            sendToClaudeCode(directory: project.directoryPath)
+                            sendToAgent(agent, directory: project.directoryPath)
                         } label: {
                             Label(project.name, systemImage: "folder")
                         }
@@ -495,93 +527,126 @@ struct RecordingDetailView: View {
                     panel.canChooseDirectories = true
                     panel.canChooseFiles = false
                     panel.allowsMultipleSelection = false
-                    panel.message = "Select directory for Claude Code"
+                    panel.message = agent.chooseDirectoryMessage
                     if panel.runModal() == .OK, let url = panel.url {
-                        sendToClaudeCode(directory: url.path)
+                        sendToAgent(agent, directory: url.path)
                     }
                 } label: {
                     Label("Choose Directory...", systemImage: "folder.badge.plus")
                 }
 
                 Button {
-                    showingNewProjectForm = true
+                    newProjectAgent = agent
                 } label: {
                     Label("New Project...", systemImage: "plus")
                 }
             } label: {
-                HStack(spacing: 4) {
-                    if sendingToClaudeCode {
+                ZStack(alignment: .bottomTrailing) {
+                    agentIcon(agent, size: 16)
+                        .opacity(isSending ? 0.35 : 1)
+
+                    if isSending {
                         ProgressView()
                             .controlSize(.small)
                             .scaleEffect(0.7)
-                    } else if claudeCodeSent {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 11))
-                    } else {
-                        Canvas { context, size in
-                            if let img = NSImage(named: "ClaudeCode") {
-                                context.draw(Image(nsImage: img), in: CGRect(origin: .zero, size: size))
-                            }
-                        }
-                        .frame(width: 14, height: 14)
                     }
-                    Text(sendingToClaudeCode ? "Sending..." : claudeCodeSent ? "Sent" : "Send to Claude Code")
-                        .font(.system(size: 12, weight: .medium))
+
+                    if wasSent {
+                        Circle()
+                            .fill(Color.brandGreen)
+                            .frame(width: 11, height: 11)
+                            .overlay {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 6, weight: .bold))
+                                    .foregroundStyle(Color.surfaceBase)
+                            }
+                            .offset(x: 4, y: 4)
+                    }
                 }
-                .foregroundStyle(claudeCodeSent ? Color.brandCyan : .white.opacity(0.8))
+                .frame(width: 16, height: 16)
+                .foregroundStyle(wasSent ? Color.brandCyan : .white.opacity(0.8))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(claudeCodeSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.08))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(wasSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.08))
             )
-            .disabled(sendingToClaudeCode)
+            .disabled(isSending)
+            .help(
+                isSending
+                    ? "Sending to \(agent.displayName)"
+                    : wasSent
+                        ? "Sent to \(projectName)"
+                        : agent.buttonTitle
+            )
 
-            // View Response button
-            if !sendingToClaudeCode && !claudeCodeResponse.isEmpty {
+            if !isSending && !response.isEmpty {
                 Button {
-                    showingClaudeCodeResponse = true
+                    responseAgent = agent
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "eye")
-                            .font(.system(size: 11))
-                        Text("View Response")
-                            .font(.system(size: 12, weight: .medium))
-                    }
+                    Image(systemName: "eye")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 16, height: 16)
                     .foregroundStyle(Color.brandCyan)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 8)
                     .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(Color.brandCyan.opacity(0.1))
                     )
                 }
                 .buttonStyle(.plain)
+                .fixedSize()
+                .help("View \(agent.responseTitle)")
                 .padding(.leading, 6)
             }
         }
-        .sheet(isPresented: $showingNewProjectForm) {
-            newProjectSheet
-        }
-        .sheet(isPresented: $showingClaudeCodeResponse) {
-            claudeCodeResponseSheet
-        }
     }
 
-    private var claudeCodeResponseSheet: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func agentIcon(_ agent: HeadlessCodingAgent, size: CGFloat) -> some View {
+        Group {
+            if let image = resizedAgentIcon(agent, size: size) {
+                Image(nsImage: image)
+                    .interpolation(.high)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipped()
+    }
+
+    private func resizedAgentIcon(_ agent: HeadlessCodingAgent, size: CGFloat) -> NSImage? {
+        guard let sourceImage = NSImage(named: agent.iconAssetName) else { return nil }
+
+        let targetSize = NSSize(width: size, height: size)
+        let renderedImage = NSImage(size: targetSize)
+        renderedImage.lockFocus()
+        sourceImage.draw(
+            in: NSRect(origin: .zero, size: targetSize),
+            from: NSRect(origin: .zero, size: sourceImage.size),
+            operation: .copy,
+            fraction: 1
+        )
+        renderedImage.unlockFocus()
+        renderedImage.isTemplate = false
+        return renderedImage
+    }
+
+    private func responseSheet(for agent: HeadlessCodingAgent) -> some View {
+        let response = agentResponses[agent] ?? ""
+
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 HStack(spacing: 6) {
-                    Image("ClaudeCode")
+                    Image(agent.iconAssetName)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 16, height: 16)
                         .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                    Text("Claude Code Response")
+                    Text(agent.responseTitle)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
                 }
@@ -589,7 +654,7 @@ struct RecordingDetailView: View {
                 Button {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
-                    pasteboard.setString(claudeCodeResponse, forType: .string)
+                    pasteboard.setString(response, forType: .string)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "doc.on.doc")
@@ -600,12 +665,12 @@ struct RecordingDetailView: View {
                 }
                 .controlSize(.small)
 
-                Button("Close") { showingClaudeCodeResponse = false }
+                Button("Close") { responseAgent = nil }
                     .keyboardShortcut(.cancelAction)
             }
 
             ScrollView {
-                Text(claudeCodeResponse)
+                Text(response)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.85))
                     .textSelection(.enabled)
@@ -622,9 +687,9 @@ struct RecordingDetailView: View {
         .background(Color.surfaceBase)
     }
 
-    private var newProjectSheet: some View {
+    private func newProjectSheet(for agent: HeadlessCodingAgent) -> some View {
         VStack(spacing: 16) {
-            Text("New Claude Code Project")
+            Text(agent.newProjectTitle)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
 
@@ -633,7 +698,7 @@ struct RecordingDetailView: View {
 
             HStack(spacing: 12) {
                 Button("Cancel") {
-                    showingNewProjectForm = false
+                    newProjectAgent = nil
                     newProjectName = ""
                 }
 
@@ -647,11 +712,11 @@ struct RecordingDetailView: View {
                         let name = newProjectName.trimmingCharacters(in: .whitespaces).isEmpty
                             ? url.lastPathComponent
                             : newProjectName.trimmingCharacters(in: .whitespaces)
-                        let project = ClaudeCodeProject(name: name, directoryPath: url.path)
-                        model.settings.claudeCodeProjects.append(project)
-                        showingNewProjectForm = false
+                        let project = HeadlessCodingProject(name: name, directoryPath: url.path)
+                        model.settings.addProject(project, for: agent)
+                        newProjectAgent = nil
                         newProjectName = ""
-                        sendToClaudeCode(directory: url.path)
+                        sendToAgent(agent, directory: url.path)
                     }
                 }
                 .disabled(false)
@@ -662,113 +727,50 @@ struct RecordingDetailView: View {
         .background(Color.surfaceBase)
     }
 
-    private func sendToClaudeCode(directory: String) {
-        guard !sendingToClaudeCode else { return }
-        sendingToClaudeCode = true
-        claudeCodeSent = false
-        claudeCodeResponse = ""
+    private func sendToAgent(_ agent: HeadlessCodingAgent, directory: String) {
+        guard !sendingAgents.contains(agent) else { return }
+        sendingAgents.insert(agent)
+        sentAgents.remove(agent)
+        agentResponses[agent] = ""
 
-        let projectName = model.settings.claudeCodeProjects.first(where: { $0.directoryPath == directory })?.name ?? URL(fileURLWithPath: directory).lastPathComponent
-        let transcript = buildClaudeCodePrompt()
+        let projectName = model.settings.projects(for: agent)
+            .first(where: { $0.directoryPath == directory })?
+            .name ?? URL(fileURLWithPath: directory).lastPathComponent
+        let transcript = model.buildHeadlessCodingPrompt(for: recording)
         let recordingId = recording.id
-        Self.log("Send to Claude Code: directory=\(directory), prompt length=\(transcript.count)")
+        let executablePathOverride = model.settings.executablePathOverride(for: agent)
+        HeadlessCodingAgentRunner.log(
+            "Send to \(agent.displayName): directory=\(directory), prompt length=\(transcript.count)",
+            agent: agent
+        )
 
         Task.detached(priority: .userInitiated) {
-            let (success, output) = await Self.runClaudeCode(prompt: transcript, directory: directory)
-            Self.log("Claude Code result: success=\(success), output length=\(output.count)")
+            let (success, output) = await HeadlessCodingAgentRunner.run(
+                agent,
+                prompt: transcript,
+                directory: directory,
+                executablePathOverride: executablePathOverride
+            )
+            HeadlessCodingAgentRunner.log(
+                "\(agent.displayName) result: success=\(success), output length=\(output.count)",
+                agent: agent
+            )
             if !success {
-                Self.log("Claude Code error: \(output.prefix(1000))")
+                HeadlessCodingAgentRunner.log("\(agent.displayName) error: \(output.prefix(1000))", agent: agent)
             } else {
-                Self.log("Claude Code response: \(output.prefix(500))")
+                HeadlessCodingAgentRunner.log("\(agent.displayName) response: \(output.prefix(500))", agent: agent)
             }
             await MainActor.run {
-                sendingToClaudeCode = false
-                claudeCodeSent = success
-                let response = output.isEmpty && !success ? "Error: Claude Code failed. Check that the directory exists and claude is installed." : output
-                claudeCodeResponse = response
+                sendingAgents.remove(agent)
                 if success {
-                    model.saveClaudeCodeResponse(response, projectName: projectName, for: recordingId)
+                    sentAgents.insert(agent)
                 }
-            }
-        }
-    }
-
-    private func buildClaudeCodePrompt() -> String {
-        let applied = model.applyingSpeakerNames(speakerNames, to: rawTranscript)
-
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .long
-        dateFormatter.timeStyle = .short
-        let dateStr = dateFormatter.string(from: recording.createdAt)
-
-        let recordingName = recording.name ?? "Untitled Recording"
-        let speakerList = speakerNames.values.filter { !$0.isEmpty }.joined(separator: ", ")
-
-        var prompt = "Here is the transcript from a meeting recorded on \(dateStr), titled '\(recordingName)'.\n\n"
-        if !speakerList.isEmpty {
-            prompt += "Speakers: \(speakerList)\n\n"
-        }
-        prompt += applied
-        return prompt
-    }
-
-    private static func log(_ message: String) {
-        let logURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Memois/claude_code_log.txt")
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let line = "[\(timestamp)] \(message)\n"
-        if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logURL.path) {
-                if let handle = try? FileHandle(forWritingTo: logURL) {
-                    handle.seekToEndOfFile()
-                    handle.write(data)
-                    handle.closeFile()
-                }
-            } else {
-                try? data.write(to: logURL)
-            }
-        }
-    }
-
-    private static func runClaudeCode(prompt: String, directory: String) async -> (Bool, String) {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let paths = ["\(NSHomeDirectory())/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude", "\(NSHomeDirectory())/.claude/local/claude"]
-                guard let execPath = paths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-                    log("ERROR: Claude binary not found. Searched: \(paths)")
-                    continuation.resume(returning: (false, "Claude Code binary not found. Searched:\n\(paths.joined(separator: "\n"))"))
-                    return
-                }
-                log("Found claude at: \(execPath)")
-
-                guard FileManager.default.fileExists(atPath: directory) else {
-                    log("ERROR: Directory not found: \(directory)")
-                    continuation.resume(returning: (false, "Directory not found: \(directory)"))
-                    return
-                }
-
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: execPath)
-                process.arguments = ["--dangerously-skip-permissions", "-p", prompt]
-                process.currentDirectoryURL = URL(fileURLWithPath: directory)
-                log("Launching: \(execPath) --dangerously-skip-permissions -p <prompt(\(prompt.count) chars)> in \(directory)")
-
-                let outputPipe = Pipe()
-                process.standardOutput = outputPipe
-                process.standardError = outputPipe
-
-                do {
-                    try process.run()
-                    log("Process launched, PID=\(process.processIdentifier). Waiting...")
-                    // Read output before waitUntilExit to avoid pipe buffer deadlock
-                    let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                    process.waitUntilExit()
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    log("Process exited: status=\(process.terminationStatus), output bytes=\(data.count)")
-                    continuation.resume(returning: (process.terminationStatus == 0, output))
-                } catch {
-                    log("ERROR launching process: \(error)")
-                    continuation.resume(returning: (false, "Failed to launch: \(error.localizedDescription)"))
+                let response = output.isEmpty && !success
+                    ? "Error: \(agent.displayName) failed. \(agent.installHint)"
+                    : output
+                agentResponses[agent] = response
+                if success {
+                    model.saveHeadlessCodingResponse(response, projectName: projectName, for: recordingId, agent: agent)
                 }
             }
         }
