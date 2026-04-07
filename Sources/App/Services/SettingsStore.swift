@@ -223,6 +223,21 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    func project(id: UUID, for agent: HeadlessCodingAgent) -> HeadlessCodingProject? {
+        projects(for: agent).first { $0.id == id }
+    }
+
+    func updateProject(_ project: HeadlessCodingProject, for agent: HeadlessCodingAgent) {
+        switch agent {
+        case .claudeCode:
+            guard let index = claudeCodeProjects.firstIndex(where: { $0.id == project.id }) else { return }
+            claudeCodeProjects[index] = project
+        case .codex:
+            guard let index = codexProjects.firstIndex(where: { $0.id == project.id }) else { return }
+            codexProjects[index] = project
+        }
+    }
+
     func removeProject(id: UUID, for agent: HeadlessCodingAgent) {
         switch agent {
         case .claudeCode:

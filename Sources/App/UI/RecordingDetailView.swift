@@ -514,7 +514,7 @@ struct RecordingDetailView: View {
                 if !projects.isEmpty {
                     ForEach(projects) { project in
                         Button {
-                            sendToAgent(agent, directory: project.directoryPath)
+                            sendToAgent(agent, project: project)
                         } label: {
                             Label(project.name, systemImage: "folder")
                         }
@@ -716,7 +716,7 @@ struct RecordingDetailView: View {
                         model.settings.addProject(project, for: agent)
                         newProjectAgent = nil
                         newProjectName = ""
-                        sendToAgent(agent, directory: url.path)
+                        sendToAgent(agent, project: project)
                     }
                 }
                 .disabled(false)
@@ -727,20 +727,29 @@ struct RecordingDetailView: View {
         .background(Color.surfaceBase)
     }
 
-    private func sendToAgent(_ agent: HeadlessCodingAgent, directory: String) {
+    private func sendToAgent(
+        _ agent: HeadlessCodingAgent,
+        project: HeadlessCodingProject? = nil,
+        directory: String? = nil
+    ) {
         guard !sendingAgents.contains(agent) else { return }
         sendingAgents.insert(agent)
         sentAgents.remove(agent)
         agentResponses[agent] = ""
 
-        let projectName = model.settings.projects(for: agent)
-            .first(where: { $0.directoryPath == directory })?
-            .name ?? URL(fileURLWithPath: directory).lastPathComponent
-        let transcript = model.buildHeadlessCodingPrompt(for: recording)
+        let targetDirectory = project?.directoryPath ?? directory ?? ""
+        guard !targetDirectory.isEmpty else {
+            sendingAgents.remove(agent)
+            agentResponses[agent] = "Error: Missing target directory."
+            return
+        }
+
+        let projectName = project?.name ?? URL(fileURLWithPath: targetDirectory).lastPathComponent
+        let transcript = model.buildHeadlessCodingPrompt(for: recording, project: project)
         let recordingId = recording.id
         let executablePathOverride = model.settings.executablePathOverride(for: agent)
         HeadlessCodingAgentRunner.log(
-            "Send to \(agent.displayName): directory=\(directory), prompt length=\(transcript.count)",
+            "Send to \(agent.displayName): directory=\(targetDirectory), prompt length=\(transcript.count)",
             agent: agent
         )
 
@@ -748,7 +757,7 @@ struct RecordingDetailView: View {
             let (success, output) = await HeadlessCodingAgentRunner.run(
                 agent,
                 prompt: transcript,
-                directory: directory,
+                directory: targetDirectory,
                 executablePathOverride: executablePathOverride
             )
             HeadlessCodingAgentRunner.log(

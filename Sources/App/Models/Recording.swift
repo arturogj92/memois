@@ -4,11 +4,13 @@ struct HeadlessCodingProject: Codable, Identifiable, Equatable {
     let id: UUID
     var name: String
     var directoryPath: String
+    var customPrompt: String?
 
-    init(id: UUID = UUID(), name: String, directoryPath: String) {
+    init(id: UUID = UUID(), name: String, directoryPath: String, customPrompt: String? = nil) {
         self.id = id
         self.name = name
         self.directoryPath = directoryPath
+        self.customPrompt = customPrompt
     }
 }
 
@@ -51,7 +53,7 @@ enum HeadlessCodingAgent: String, CaseIterable, Identifiable {
     }
 
     var projectSettingsDescription: String {
-        "Saved directories for sending transcripts to \(displayName)"
+        "Saved directories and prompt templates for sending transcripts to \(displayName)"
     }
 
     var responseTitle: String {

@@ -567,7 +567,7 @@ final class AppModel: ObservableObject {
         return parts.joined(separator: "\n")
     }
 
-    func buildHeadlessCodingPrompt(for recording: Recording) -> String {
+    func buildHeadlessCodingPrompt(for recording: Recording, project: HeadlessCodingProject? = nil) -> String {
         let speakerNames = loadSpeakerNames(for: recording)
         let rawTranscript = readTranscript(for: recording) ?? ""
         let transcript = applyingSpeakerNames(speakerNames, to: rawTranscript)
@@ -579,6 +579,16 @@ final class AppModel: ObservableObject {
 
         let recordingName = recording.name ?? "Untitled Recording"
         let speakerList = speakerNames.values.filter { !$0.isEmpty }.joined(separator: ", ")
+        let template = project?.customPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if !template.isEmpty {
+            return renderHeadlessCodingPromptTemplate(
+                template,
+                recordingName: recordingName,
+                transcriptDate: dateStr,
+                transcript: transcript
+            )
+        }
 
         var prompt = "Here is the transcript from a meeting recorded on \(dateStr), titled '\(recordingName)'.\n\n"
         if !speakerList.isEmpty {
@@ -587,6 +597,38 @@ final class AppModel: ObservableObject {
         prompt += transcript
 
         return prompt
+    }
+
+    private func renderHeadlessCodingPromptTemplate(
+        _ template: String,
+        recordingName: String,
+        transcriptDate: String,
+        transcript: String
+    ) -> String {
+        let replacements = [
+            "{{meetingName}}": recordingName,
+            "{{recordingName}}": recordingName,
+            "{{transcriptDate}}": transcriptDate,
+            "{{meetingDate}}": transcriptDate,
+        ]
+
+        var rendered = template
+        for (placeholder, value) in replacements {
+            rendered = rendered.replacingOccurrences(of: placeholder, with: value)
+        }
+        rendered = rendered.replacingOccurrences(of: "{{speakers}}", with: "")
+        rendered = rendered.replacingOccurrences(of: "{{transcript}}", with: "")
+
+        let trimmed = rendered.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return transcript
+        }
+
+        if transcript.isEmpty {
+            return trimmed
+        }
+
+        return "\(trimmed)\n\nTranscript:\n\(transcript)"
     }
 
     func renameRecording(id: UUID, name: String) {

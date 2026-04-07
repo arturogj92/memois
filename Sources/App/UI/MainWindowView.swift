@@ -45,6 +45,7 @@ struct MainWindowView: View {
     private enum SidebarTab: String, CaseIterable, Identifiable {
         case recordings = "Recordings"
         case stats = "Usage"
+        case projects = "Projects"
         case settings = "Settings"
         case permissions = "Permissions"
 
@@ -54,6 +55,7 @@ struct MainWindowView: View {
             switch self {
             case .recordings: "waveform.circle"
             case .stats: "chart.bar"
+            case .projects: "folder.badge.gearshape"
             case .settings: "gearshape"
             case .permissions: "lock.shield"
             }
@@ -278,6 +280,7 @@ struct MainWindowView: View {
                 switch selectedTab {
                 case .recordings: recordingsContent
                 case .stats: statsContent
+                case .projects: projectsContent
                 case .settings: settingsContent
                 case .permissions: permissionsContent
                 }
@@ -1065,16 +1068,6 @@ struct MainWindowView: View {
                 }
             }
 
-            ForEach(HeadlessCodingAgent.allCases) { agent in
-                card {
-                    headlessCodingProjectsSection(for: agent)
-                }
-            }
-
-            card {
-                executablePathsSection
-            }
-
             // Sounds
             card {
                 VStack(alignment: .leading, spacing: 10) {
@@ -1181,6 +1174,47 @@ struct MainWindowView: View {
                         .controlSize(.small)
                     }
                 }
+            }
+        }
+        .onAppear(perform: refreshExecutableResolutions)
+        .onChange(of: settings.claudeExecutablePathOverride) {
+            refreshExecutableResolutions()
+        }
+        .onChange(of: settings.codexExecutablePathOverride) {
+            refreshExecutableResolutions()
+        }
+    }
+
+    private var projectsContent: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Projects")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(.white)
+
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Prompt Templates")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+
+                    Text("Each saved project can define its own custom prompt. Use variables like {{meetingName}} and {{transcriptDate}} to personalize what gets sent to Claude or Codex.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.35))
+
+                    Text("Available variables: {{meetingName}}, {{transcriptDate}}. The transcript is always attached automatically.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.25))
+                }
+            }
+
+            ForEach(HeadlessCodingAgent.allCases) { agent in
+                card {
+                    headlessCodingProjectsSection(for: agent)
+                }
+            }
+
+            card {
+                executablePathsSection
             }
         }
         .onAppear(perform: refreshExecutableResolutions)
@@ -1407,6 +1441,39 @@ struct MainWindowView: View {
         }
     }
 
+    private func customPromptBinding(for project: HeadlessCodingProject, agent: HeadlessCodingAgent) -> Binding<String> {
+        Binding(
+            get: {
+                settings.project(id: project.id, for: agent)?.customPrompt ?? ""
+            },
+            set: { newValue in
+                guard var updatedProject = settings.project(id: project.id, for: agent) else { return }
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                updatedProject.customPrompt = trimmed.isEmpty ? nil : newValue
+                settings.updateProject(updatedProject, for: agent)
+            }
+        )
+    }
+
+    private var promptTemplateVariables: [String] {
+        ["{{meetingName}}", "{{transcriptDate}}"]
+    }
+
+    private func insertPromptVariable(_ placeholder: String, into project: HeadlessCodingProject, agent: HeadlessCodingAgent) {
+        guard var updatedProject = settings.project(id: project.id, for: agent) else { return }
+
+        let existingPrompt = updatedProject.customPrompt ?? ""
+        if existingPrompt.isEmpty {
+            updatedProject.customPrompt = placeholder
+        } else if existingPrompt.hasSuffix(" ") || existingPrompt.hasSuffix("\n") {
+            updatedProject.customPrompt = existingPrompt + placeholder
+        } else {
+            updatedProject.customPrompt = existingPrompt + " " + placeholder
+        }
+
+        settings.updateProject(updatedProject, for: agent)
+    }
+
     private func chooseExecutablePath(for agent: HeadlessCodingAgent) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
@@ -1458,33 +1525,93 @@ struct MainWindowView: View {
     }
 
     private func headlessCodingProjectRow(_ project: HeadlessCodingProject, agent: HeadlessCodingAgent) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "terminal")
-                .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.4))
-                .frame(width: 16)
+        let customPrompt = customPromptBinding(for: project, agent: agent)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(project.name)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
-                Text(project.directoryPath)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.3))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(project.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text(project.directoryPath)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.3))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
+
+                Button {
+                    settings.removeProject(id: project.id, for: agent)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .buttonStyle(.plain)
             }
 
-            Spacer()
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Custom Prompt")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
 
-            Button {
-                settings.removeProject(id: project.id, for: agent)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.3))
+                Text("Click a variable to insert it into this project's prompt. The transcript is always included automatically.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.28))
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 120), spacing: 8, alignment: .leading)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(promptTemplateVariables, id: \.self) { placeholder in
+                        Button {
+                            insertPromptVariable(placeholder, into: project, agent: agent)
+                        } label: {
+                            Text(placeholder)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.78))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Color.surfaceInput.opacity(0.9))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.surfaceInput)
+
+                    if customPrompt.wrappedValue.isEmpty {
+                        Text("Optional. Example: Take the transcript for {{meetingName}} from {{transcriptDate}} and update my notes.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.22))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .allowsHitTesting(false)
+                    }
+
+                    TextEditor(text: customPrompt)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .scrollContentBackground(.hidden)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(minHeight: 84)
+                }
             }
-            .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
     }
@@ -1501,7 +1628,7 @@ struct MainWindowView: View {
             if !projects.isEmpty {
                 ForEach(projects) { project in
                     Button {
-                        sendRecordingToAgent(agent, recording: recording, directory: project.directoryPath, projectName: project.name)
+                        sendRecordingToAgent(agent, recording: recording, directory: project.directoryPath, project: project)
                     } label: {
                         Label(project.name, systemImage: "folder")
                     }
@@ -1516,7 +1643,7 @@ struct MainWindowView: View {
                 panel.allowsMultipleSelection = false
                 panel.message = agent.chooseDirectoryMessage
                 if panel.runModal() == .OK, let url = panel.url {
-                    sendRecordingToAgent(agent, recording: recording, directory: url.path, projectName: url.lastPathComponent)
+                    sendRecordingToAgent(agent, recording: recording, directory: url.path)
                 }
             } label: {
                 Label("Choose Directory...", systemImage: "folder.badge.plus")
@@ -1578,15 +1705,16 @@ struct MainWindowView: View {
         _ agent: HeadlessCodingAgent,
         recording: Recording,
         directory: String,
-        projectName: String
+        project: HeadlessCodingProject? = nil
     ) {
         guard !isSending(recording.id, via: agent) else { return }
         updateSendingState(true, recordingID: recording.id, agent: agent)
 
-        let prompt = model.buildHeadlessCodingPrompt(for: recording)
+        let prompt = model.buildHeadlessCodingPrompt(for: recording, project: project)
 
         let recordingId = recording.id
         let executablePathOverride = settings.executablePathOverride(for: agent)
+        let projectName = project?.name ?? URL(fileURLWithPath: directory).lastPathComponent
 
         Task.detached(priority: .userInitiated) {
             HeadlessCodingAgentRunner.log(

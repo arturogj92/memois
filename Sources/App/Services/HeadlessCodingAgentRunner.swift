@@ -58,6 +58,7 @@ enum HeadlessCodingAgentRunner {
                 process.executableURL = URL(fileURLWithPath: execPath)
                 process.arguments = arguments(for: agent, prompt: prompt, outputFileURL: outputFileURL)
                 process.currentDirectoryURL = URL(fileURLWithPath: directory)
+                process.environment = executionEnvironment(forExecutableAt: execPath)
 
                 let outputPipe = Pipe()
                 process.standardOutput = outputPipe
@@ -97,6 +98,13 @@ enum HeadlessCodingAgentRunner {
                         "Process exited: status=\(process.terminationStatus), output bytes=\(data.count)",
                         agent: agent
                     )
+                    if process.terminationStatus != 0 {
+                        let snippetSource = output.isEmpty ? combinedOutput : output
+                        let snippet = snippetSource.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !snippet.isEmpty {
+                            log("Process failure output: \(snippet.prefix(1000))", agent: agent)
+                        }
+                    }
 
                     if let outputFileURL {
                         try? FileManager.default.removeItem(at: outputFileURL)
@@ -259,6 +267,62 @@ enum HeadlessCodingAgentRunner {
         } catch {
             return nil
         }
+    }
+
+    private static func executionEnvironment(forExecutableAt executablePath: String) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let executableDirectory = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
+
+        let mergedPath = mergedSearchPath(components: [
+            executableDirectory,
+            shellEnvironmentValue(named: "PATH", loginShell: true),
+            environment["PATH"],
+        ])
+
+        if !mergedPath.isEmpty {
+            environment["PATH"] = mergedPath
+        }
+
+        return environment
+    }
+
+    private static func shellEnvironmentValue(named variableName: String, loginShell: Bool) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = loginShell ? ["-l", "-c", "printenv \(variableName)"] : ["-c", "printenv \(variableName)"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else { return nil }
+            return normalizedPath(String(data: data, encoding: .utf8))
+        } catch {
+            return nil
+        }
+    }
+
+    private static func mergedSearchPath(components: [String?]) -> String {
+        var seen = Set<String>()
+        var directories: [String] = []
+
+        for component in components {
+            let segments = component?
+                .split(separator: ":")
+                .map(String.init) ?? []
+
+            for segment in segments where !segment.isEmpty {
+                guard seen.insert(segment).inserted else { continue }
+                directories.append(segment)
+            }
+        }
+
+        return directories.joined(separator: ":")
     }
 
     private static func environmentResolvedExecutablePath(named executableName: String) -> String? {

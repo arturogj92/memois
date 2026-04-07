@@ -7,6 +7,28 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.8.1</title>
+            <description><![CDATA[
+<h2>What's New in 0.8.1</h2>
+<ul>
+    <li><strong>Dedicated Projects workspace</strong> — Manage Claude Code and Codex projects from a new sidebar section instead of buried inline controls.</li>
+    <li><strong>Per-project custom prompts</strong> — Save a reusable prompt template for each project and insert meeting variables with one click.</li>
+    <li><strong>Transcript always included</strong> — Custom prompts stay concise while Memois automatically appends the full meeting transcript when it sends context to the agent.</li>
+    <li><strong>More reliable Codex launches</strong> — The app now inherits your login-shell PATH so Codex starts correctly from the macOS app, with clearer error logging if something still fails.</li>
+</ul>
+            ]]></description>
+            <pubDate>Tue, 07 Apr 2026 15:30:00 +0200</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.8.1/Memois-v0.8.1-macOS.zip"
+                sparkle:version="6"
+                sparkle:shortVersionString="0.8.1"
+                length="3862855"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.8.0</title>
             <description><![CDATA[
 <h2>What's New in 0.8.0</h2>
