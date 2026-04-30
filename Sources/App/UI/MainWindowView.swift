@@ -9,6 +9,7 @@ private extension Color {
     static let brandGreen = Color(red: 0.3, green: 0.95, blue: 0.4)
     static let brandYellow = Color(red: 1.0, green: 0.85, blue: 0.1)
     static let brandPink = Color(red: 1.0, green: 0.3, blue: 0.6)
+    static let brandPurple = Color(red: 0.7, green: 0.45, blue: 1.0)
 
     // Dark surface colors
     static let surfaceBase = Color(red: 0.07, green: 0.07, blue: 0.08)       // #121214 main bg
@@ -41,6 +42,20 @@ struct MainWindowView: View {
     @State private var sendingRecordingIDsByAgent: [HeadlessCodingAgent: Set<UUID>] = [:]
     @State private var executableResolutions: [HeadlessCodingAgent: HeadlessCodingAgentRunner.ExecutableResolution] = [:]
     @State private var isRefreshingExecutableResolutions = false
+    @State private var pendingSendRequest: PendingSendRequest?
+    @State private var extraPromptText: String = ""
+
+    struct PendingSendRequest: Identifiable {
+        let id = UUID()
+        let agent: HeadlessCodingAgent
+        let recording: Recording
+        let directory: String
+        let project: HeadlessCodingProject?
+
+        var targetName: String {
+            project?.name ?? URL(fileURLWithPath: directory).lastPathComponent
+        }
+    }
 
     private enum SidebarTab: String, CaseIterable, Identifiable {
         case recordings = "Recordings"
@@ -120,6 +135,9 @@ struct MainWindowView: View {
         }
         .sheet(item: $selectedRecording) { recording in
             RecordingDetailView(recording: recording, model: model)
+        }
+        .sheet(item: $pendingSendRequest) { request in
+            extraPromptSheet(for: request)
         }
     }
 
@@ -267,6 +285,7 @@ struct MainWindowView: View {
     private var statusColor: Color {
         switch model.sessionState {
         case .idle: .brandGreen
+        case .preparing: .brandYellow
         case .recording: .brandYellow
         case .error: .brandPink
         }
@@ -493,7 +512,7 @@ struct MainWindowView: View {
                     .background(Capsule().fill(.white.opacity(0.08)))
 
                 // Status badge
-                statusBadge(for: recording.transcriptionStatus)
+                statusBadge(for: recording)
             }
 
             // Show error message if failed
@@ -605,6 +624,8 @@ struct MainWindowView: View {
                     )
                     .help("Copy transcript")
 
+                    manuallyProcessedToggle(for: recording)
+
                     ForEach(HeadlessCodingAgent.allCases) { agent in
                         sendToAgentMenu(agent, for: recording)
                     }
@@ -686,9 +707,32 @@ struct MainWindowView: View {
         .shimmering()
     }
 
-    private func statusBadge(for status: Recording.TranscriptionStatus) -> some View {
+    private func manuallyProcessedToggle(for recording: Recording) -> some View {
+        let isProcessed = recording.manuallyProcessedAt != nil
+        return Button {
+            model.toggleManuallyProcessed(recordingID: recording.id)
+        } label: {
+            Image(systemName: isProcessed ? "checkmark.circle.fill" : "checkmark.circle")
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 16, height: 16)
+                .foregroundStyle(isProcessed ? Color.brandPurple : .white.opacity(0.8))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.brandPurple.opacity(isProcessed ? 0.25 : 0.1))
+        )
+        .help(isProcessed ? "Mark as unprocessed" : "Mark as processed")
+    }
+
+    private func statusBadge(for recording: Recording) -> some View {
         let (label, color): (String, Color) = {
-            switch status {
+            if recording.manuallyProcessedAt != nil {
+                return ("Processed", .brandPurple)
+            }
+            switch recording.transcriptionStatus {
             case .none: return ("Recorded", .brandYellow)
             case .uploading, .processing: return ("Transcribing", .brandCyan)
             case .completed: return ("Transcribed", .brandGreen)
@@ -1017,6 +1061,18 @@ struct MainWindowView: View {
                         .labelsHidden()
                         Button("Refresh") { refreshMicrophoneList() }
                     }
+                    Toggle(isOn: $settings.confirmMicBeforeRecording) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Confirm microphone before recording")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.85))
+                            Text("Show a preflight panel with the mic picker and live levels before each recording.")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.45))
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
                 }
             }
             .onAppear { refreshMicrophoneList() }
@@ -1628,7 +1684,7 @@ struct MainWindowView: View {
             if !projects.isEmpty {
                 ForEach(projects) { project in
                     Button {
-                        sendRecordingToAgent(agent, recording: recording, directory: project.directoryPath, project: project)
+                        requestSend(agent: agent, recording: recording, directory: project.directoryPath, project: project)
                     } label: {
                         Label(project.name, systemImage: "folder")
                     }
@@ -1643,7 +1699,7 @@ struct MainWindowView: View {
                 panel.allowsMultipleSelection = false
                 panel.message = agent.chooseDirectoryMessage
                 if panel.runModal() == .OK, let url = panel.url {
-                    sendRecordingToAgent(agent, recording: recording, directory: url.path)
+                    requestSend(agent: agent, recording: recording, directory: url.path, project: nil)
                 }
             } label: {
                 Label("Choose Directory...", systemImage: "folder.badge.plus")
@@ -1701,16 +1757,97 @@ struct MainWindowView: View {
         sendingRecordingIDsByAgent[agent] = ids
     }
 
+    private func requestSend(
+        agent: HeadlessCodingAgent,
+        recording: Recording,
+        directory: String,
+        project: HeadlessCodingProject?
+    ) {
+        extraPromptText = ""
+        pendingSendRequest = PendingSendRequest(
+            agent: agent,
+            recording: recording,
+            directory: directory,
+            project: project
+        )
+    }
+
+    private func extraPromptSheet(for request: PendingSendRequest) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                agentIcon(request.agent, size: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Send to \(request.agent.displayName)")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text(request.targetName)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Extra context (optional)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.75))
+                Text("Anything specific the agent should keep in mind for this transcript?")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.45))
+
+                TextEditor(text: $extraPromptText)
+                    .font(.system(size: 12))
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .frame(minHeight: 120)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.surfaceInput)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    pendingSendRequest = nil
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Send") {
+                    let extras = extraPromptText
+                    let req = request
+                    pendingSendRequest = nil
+                    sendRecordingToAgent(
+                        req.agent,
+                        recording: req.recording,
+                        directory: req.directory,
+                        project: req.project,
+                        extraInstructions: extras
+                    )
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .background(Color.surfaceBase)
+    }
+
     private func sendRecordingToAgent(
         _ agent: HeadlessCodingAgent,
         recording: Recording,
         directory: String,
-        project: HeadlessCodingProject? = nil
+        project: HeadlessCodingProject? = nil,
+        extraInstructions: String = ""
     ) {
         guard !isSending(recording.id, via: agent) else { return }
         updateSendingState(true, recordingID: recording.id, agent: agent)
 
-        let prompt = model.buildHeadlessCodingPrompt(for: recording, project: project)
+        let prompt = model.buildHeadlessCodingPrompt(for: recording, project: project, extraInstructions: extraInstructions)
 
         let recordingId = recording.id
         let executablePathOverride = settings.executablePathOverride(for: agent)

@@ -2,13 +2,23 @@ import SwiftUI
 
 struct DockTabView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var settings: SettingsStore
+    @ObservedObject var liveTranscription: LiveTranscriptionService
     var onStop: @MainActor () -> Void
+    var onStartFromPreflight: @MainActor () -> Void
+    var onCancelPreflight: @MainActor () -> Void
     var onExpandChanged: @MainActor (Bool) -> Void
 
     @State private var isExpanded = false
+    @State private var availableDevices: [AudioDevice] = []
+    @FocusState private var nameFocused: Bool
 
     private var isRecording: Bool {
         model.sessionState == .recording
+    }
+
+    private var isPreflight: Bool {
+        model.sessionState == .preparing
     }
 
     private var isError: Bool {
@@ -33,15 +43,30 @@ struct DockTabView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
             pillView
         }
-        .frame(width: 280, height: 240, alignment: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: isRecording) { _, recording in
             if !recording {
                 isExpanded = false
                 onExpandChanged(false)
             }
+        }
+        .onChange(of: isPreflight) { _, preflight in
+            if preflight {
+                refreshDevices()
+                nameFocused = true
+            }
+        }
+    }
+
+    private func refreshDevices() {
+        availableDevices = AudioDevice.inputDevices()
+        if let uid = model.settings.selectedMicrophoneUID,
+           !availableDevices.contains(where: { $0.uid == uid }) {
+            model.settings.selectedMicrophoneUID = nil
         }
     }
 
@@ -51,10 +76,14 @@ struct DockTabView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
+    private var bigPill: Bool { isPreflight || (isRecording && isExpanded) }
+
     private var pillView: some View {
         VStack(spacing: 0) {
             if isError {
                 errorContent
+            } else if isPreflight {
+                preflightContent
             } else if isRecording && isExpanded {
                 expandedContent
             } else if isRecording {
@@ -63,15 +92,15 @@ struct DockTabView: View {
                 IdleWaveView()
             }
         }
-        .padding(.horizontal, isExpanded ? 12 : (isError ? 10 : (isRecording ? 10 : 8)))
-        .padding(.vertical, isExpanded ? 10 : 5)
+        .padding(.horizontal, bigPill ? 12 : (isError ? 10 : (isRecording ? 10 : 8)))
+        .padding(.vertical, bigPill ? 10 : 5)
         .background(
-            RoundedRectangle(cornerRadius: isExpanded ? 14 : 8, style: .continuous)
+            RoundedRectangle(cornerRadius: bigPill ? 14 : 8, style: .continuous)
                 .fill(pillFill)
                 .overlay(
-                    RoundedRectangle(cornerRadius: isExpanded ? 14 : 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: bigPill ? 14 : 8, style: .continuous)
                         .strokeBorder(
-                            isRecording
+                            (isRecording || isPreflight)
                                 ? AnyShapeStyle(LinearGradient(
                                     colors: [
                                         Color(red: 0.0, green: 0.85, blue: 0.95),
@@ -83,13 +112,13 @@ struct DockTabView: View {
                                 : isError
                                     ? AnyShapeStyle(Color.white.opacity(0.2))
                                     : AnyShapeStyle(.white.opacity(0.1)),
-                            lineWidth: isRecording ? 1 : 0.5
+                            lineWidth: (isRecording || isPreflight) ? 1 : 0.5
                         )
                 )
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
         )
-        .frame(maxWidth: isExpanded ? 260 : (isError ? 260 : nil))
-        .contentShape(RoundedRectangle(cornerRadius: isExpanded ? 14 : 8))
+        .frame(maxWidth: bigPill ? .infinity : (isError ? 260 : nil))
+        .contentShape(RoundedRectangle(cornerRadius: bigPill ? 14 : 8))
         .onTapGesture {
             if isRecording && !isExpanded {
                 withAnimation(.easeInOut(duration: 0.25)) {
@@ -99,8 +128,120 @@ struct DockTabView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: isRecording)
+        .animation(.easeInOut(duration: 0.3), value: isPreflight)
         .animation(.easeInOut(duration: 0.3), value: isError)
         .animation(.easeInOut(duration: 0.25), value: isExpanded)
+    }
+
+    // MARK: - Preflight content (mic picker + level bars + name + Start/Cancel)
+
+    private var preflightContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "mic.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.3, green: 0.95, blue: 0.4))
+                Text("Ready to record")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.5)
+                    .foregroundStyle(.white.opacity(0.95))
+                Spacer()
+                Text(model.settings.shortcutDescription)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+
+            Picker("", selection: Binding(
+                get: { model.settings.selectedMicrophoneUID ?? "" },
+                set: { model.changePreflightMic(uid: $0.isEmpty ? nil : $0) }
+            )) {
+                Text("System Default").tag("")
+                ForEach(availableDevices) { d in
+                    Text(d.name).tag(d.uid)
+                }
+            }
+            .labelsHidden()
+            .controlSize(.small)
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 5) {
+                HStack(spacing: 6) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(model.micLevel > 0.05 ? .green : .green.opacity(0.3))
+                        .frame(width: 12)
+                    AudioCaptureBar(level: model.micLevel, color: .green)
+                        .frame(height: 5)
+                    Text("Mic")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .frame(width: 32, alignment: .trailing)
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(model.systemLevel > 0.05 ? .cyan : .cyan.opacity(0.3))
+                        .frame(width: 12)
+                    AudioCaptureBar(level: model.systemLevel, color: .cyan)
+                        .frame(height: 5)
+                    Text("System")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .frame(width: 32, alignment: .trailing)
+                }
+            }
+
+            preflightCaptionsRow
+
+            TextField("Recording name (optional)…", text: $model.recordingName)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.white.opacity(0.1))
+                )
+                .focused($nameFocused)
+                .onSubmit { onStartFromPreflight() }
+
+            HStack(spacing: 8) {
+                Button { onCancelPreflight() } label: {
+                    Text("Cancel")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.white.opacity(0.08))
+                        )
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape, modifiers: [])
+
+                Button { onStartFromPreflight() } label: {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 7, height: 7)
+                        Text("Start Recording")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color(red: 0.85, green: 0.18, blue: 0.22))
+                    )
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .frame(width: 240)
     }
 
     // MARK: - Compact recording pill (dot + timer + screenshot + dual level dots)
@@ -123,6 +264,10 @@ struct DockTabView: View {
             // Screenshot button
             screenshotButton
 
+            if settings.liveSubtitlesEnabled {
+                liveBadge
+            }
+
             // Dual level indicators
             VStack(spacing: 2) {
                 // Mic level dot
@@ -136,6 +281,26 @@ struct DockTabView: View {
             }
         }
         .frame(height: 18)
+    }
+
+    private var liveBadge: some View {
+        let isLive = liveTranscription.status == .live
+        let isError: Bool = {
+            if case .error = liveTranscription.status { return true }
+            return false
+        }()
+        let dotColor: Color = isError ? .red : (isLive ? .green : .yellow)
+        return HStack(spacing: 3) {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 5, height: 5)
+            Text("CC")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.white.opacity(0.85))
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(Color.white.opacity(0.12)))
     }
 
     // MARK: - Screenshot button
@@ -204,6 +369,33 @@ struct DockTabView: View {
                 .buttonStyle(.plain)
             }
 
+            // Live audio level bars (mic + system)
+            VStack(spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(model.micLevel > 0.05 ? .green : .green.opacity(0.3))
+                        .frame(width: 12)
+                    AudioCaptureBar(level: model.micLevel, color: .green)
+                        .frame(height: 4)
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(model.systemLevel > 0.05 ? .cyan : .cyan.opacity(0.3))
+                        .frame(width: 12)
+                    AudioCaptureBar(level: model.systemLevel, color: .cyan)
+                        .frame(height: 4)
+                }
+            }
+
+            captionsToggleRow
+
+            if settings.liveSubtitlesEnabled {
+                SubtitlesPanelView(service: liveTranscription, settings: settings)
+                    .frame(maxHeight: .infinity)
+            }
+
             // Name field + stop button row
             HStack(spacing: 8) {
                 TextField("Recording name...", text: $model.recordingName)
@@ -255,6 +447,64 @@ struct DockTabView: View {
             }
         }
         .frame(height: 18)
+    }
+
+    // MARK: - Live subtitles toggles
+
+    private var preflightCaptionsRow: some View {
+        Toggle(isOn: Binding(
+            get: { settings.liveSubtitlesEnabled },
+            set: { settings.liveSubtitlesEnabled = $0 }
+        )) {
+            HStack(spacing: 6) {
+                Image(systemName: "captions.bubble.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(settings.liveSubtitlesEnabled ? Color.accentColor : .white.opacity(0.6))
+                Text("Live subtitles")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+        }
+        .toggleStyle(.switch)
+        .tint(Color.accentColor)
+        .controlSize(.small)
+    }
+
+    private var captionsToggleRow: some View {
+        let on = settings.liveSubtitlesEnabled
+        return Button {
+            let willTurnOn = !on
+            settings.liveSubtitlesEnabled = willTurnOn
+            if willTurnOn && isRecording && !model.settings.assemblyAIKey.isEmpty {
+                liveTranscription.start(apiKey: model.settings.assemblyAIKey)
+            } else if !willTurnOn && isRecording {
+                liveTranscription.stop()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: on ? "captions.bubble.fill" : "captions.bubble")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(on ? "Subtitles ON" : "Enable subtitles")
+                    .font(.system(size: 11, weight: .semibold))
+                Spacer()
+                if let lang = liveTranscription.detectedLanguage {
+                    Text(lang.uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.white.opacity(0.18)))
+                }
+            }
+            .foregroundStyle(on ? .white : .white.opacity(0.85))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(on ? Color.accentColor : Color.white.opacity(0.08))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func barHeight(index: Int) -> CGFloat {

@@ -29,6 +29,21 @@ struct RecordingDetailView: View {
     @State private var newProjectName = ""
     @State private var newProjectAgent: HeadlessCodingAgent?
     @State private var filterBySpeaker: String?
+    @State private var pendingSendRequest: PendingSendRequest?
+    @State private var extraPromptText: String = ""
+
+    struct PendingSendRequest: Identifiable {
+        let id = UUID()
+        let agent: HeadlessCodingAgent
+        let project: HeadlessCodingProject?
+        let directory: String?
+
+        var targetName: String {
+            if let project { return project.name }
+            if let directory { return URL(fileURLWithPath: directory).lastPathComponent }
+            return ""
+        }
+    }
 
     private var hasUtterances: Bool { !utterances.isEmpty }
 
@@ -348,6 +363,9 @@ struct RecordingDetailView: View {
         .sheet(item: $newProjectAgent) { agent in
             newProjectSheet(for: agent)
         }
+        .sheet(item: $pendingSendRequest) { request in
+            extraPromptSheet(for: request)
+        }
     }
 
     // MARK: - Speaker Names
@@ -514,7 +532,7 @@ struct RecordingDetailView: View {
                 if !projects.isEmpty {
                     ForEach(projects) { project in
                         Button {
-                            sendToAgent(agent, project: project)
+                            requestSend(agent: agent, project: project, directory: nil)
                         } label: {
                             Label(project.name, systemImage: "folder")
                         }
@@ -529,7 +547,7 @@ struct RecordingDetailView: View {
                     panel.allowsMultipleSelection = false
                     panel.message = agent.chooseDirectoryMessage
                     if panel.runModal() == .OK, let url = panel.url {
-                        sendToAgent(agent, directory: url.path)
+                        requestSend(agent: agent, project: nil, directory: url.path)
                     }
                 } label: {
                     Label("Choose Directory...", systemImage: "folder.badge.plus")
@@ -716,7 +734,7 @@ struct RecordingDetailView: View {
                         model.settings.addProject(project, for: agent)
                         newProjectAgent = nil
                         newProjectName = ""
-                        sendToAgent(agent, project: project)
+                        requestSend(agent: agent, project: project, directory: nil)
                     }
                 }
                 .disabled(false)
@@ -727,10 +745,84 @@ struct RecordingDetailView: View {
         .background(Color.surfaceBase)
     }
 
+    private func requestSend(
+        agent: HeadlessCodingAgent,
+        project: HeadlessCodingProject?,
+        directory: String?
+    ) {
+        extraPromptText = ""
+        pendingSendRequest = PendingSendRequest(agent: agent, project: project, directory: directory)
+    }
+
+    private func extraPromptSheet(for request: PendingSendRequest) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                agentIcon(request.agent, size: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Send to \(request.agent.displayName)")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text(request.targetName)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Extra context (optional)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.75))
+                Text("Anything specific the agent should keep in mind for this transcript?")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.45))
+
+                TextEditor(text: $extraPromptText)
+                    .font(.system(size: 12))
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .frame(minHeight: 120)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.surfaceInput)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    pendingSendRequest = nil
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Send") {
+                    let extras = extraPromptText
+                    let req = request
+                    pendingSendRequest = nil
+                    sendToAgent(
+                        req.agent,
+                        project: req.project,
+                        directory: req.directory,
+                        extraInstructions: extras
+                    )
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .background(Color.surfaceBase)
+    }
+
     private func sendToAgent(
         _ agent: HeadlessCodingAgent,
         project: HeadlessCodingProject? = nil,
-        directory: String? = nil
+        directory: String? = nil,
+        extraInstructions: String = ""
     ) {
         guard !sendingAgents.contains(agent) else { return }
         sendingAgents.insert(agent)
@@ -745,7 +837,7 @@ struct RecordingDetailView: View {
         }
 
         let projectName = project?.name ?? URL(fileURLWithPath: targetDirectory).lastPathComponent
-        let transcript = model.buildHeadlessCodingPrompt(for: recording, project: project)
+        let transcript = model.buildHeadlessCodingPrompt(for: recording, project: project, extraInstructions: extraInstructions)
         let recordingId = recording.id
         let executablePathOverride = model.settings.executablePathOverride(for: agent)
         HeadlessCodingAgentRunner.log(

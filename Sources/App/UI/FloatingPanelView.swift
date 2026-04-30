@@ -11,6 +11,8 @@ struct FloatingPanelView: View {
         switch model.sessionState {
         case .idle:
             return "waveform"
+        case .preparing:
+            return "mic.circle"
         case .recording:
             return "mic.fill"
         case .error:
@@ -60,6 +62,7 @@ struct FloatingPanelView: View {
                             .tracking(1.5)
                             .foregroundStyle(.red.opacity(0.9))
                         Spacer()
+                        captionsToggleButton
                         Text(model.settings.shortcutDescription)
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.secondary)
@@ -98,6 +101,10 @@ struct FloatingPanelView: View {
                                 .frame(width: 30, alignment: .trailing)
                         }
                     }
+
+                    if model.settings.liveSubtitlesEnabled && model.settings.liveSubtitlesPanelExpanded {
+                        SubtitlesPanelView(service: model.liveTranscription, settings: model.settings)
+                    }
                 }
                 .padding(16)
             } else {
@@ -118,11 +125,14 @@ struct FloatingPanelView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
+                    captionsToggleButton
                 }
                 .padding(14)
             }
         }
         .frame(width: 300)
+        .animation(.easeInOut(duration: 0.18), value: model.settings.liveSubtitlesEnabled)
+        .animation(.easeInOut(duration: 0.18), value: model.settings.liveSubtitlesPanelExpanded)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -133,6 +143,39 @@ struct FloatingPanelView: View {
                 .shadow(color: .black.opacity(0.15), radius: 20, y: 10)
         )
         .padding(6)
+    }
+
+    private var captionsToggleButton: some View {
+        let on = model.settings.liveSubtitlesEnabled
+        return Button {
+            let willTurnOn = !on
+            model.settings.liveSubtitlesEnabled = willTurnOn
+            if willTurnOn && isRecording && !model.settings.assemblyAIKey.isEmpty {
+                model.liveTranscription.start(apiKey: model.settings.assemblyAIKey)
+            } else if !willTurnOn && isRecording {
+                model.liveTranscription.stop()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: on ? "captions.bubble.fill" : "captions.bubble")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("CC")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundStyle(on ? .white : Color.accentColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(on ? Color.accentColor : Color.accentColor.opacity(0.15))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color.accentColor.opacity(on ? 0 : 0.4), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(on ? "Live subtitles ON — click to disable" : "Live subtitles OFF — click to enable")
     }
 }
 

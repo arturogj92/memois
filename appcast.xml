@@ -7,6 +7,28 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.9.0</title>
+            <description><![CDATA[
+<h2>What's New in 0.9.0</h2>
+<ul>
+    <li><strong>Live subtitles</strong> — Real-time transcription panel that streams committed turns and partial text while you record, with detected language badge and live diagnostics (bytes sent, peak level, last event).</li>
+    <li><strong>Microphone preflight</strong> — New pre-recording check verifies the selected input device, permissions, and signal level before you hit record, so you don't lose a meeting to a muted mic.</li>
+    <li><strong>Floating subtitles panel</strong> — Dedicated SwiftUI surface for the live transcript that you can keep visible while focused on other windows.</li>
+    <li><strong>Better internal logging</strong> — Centralized debug log makes it easier to diagnose audio pipeline and transcription issues from support reports.</li>
+</ul>
+            ]]></description>
+            <pubDate>Thu, 30 Apr 2026 12:00:00 +0200</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.9.0/Memois-v0.9.0-macOS.zip"
+                sparkle:version="7"
+                sparkle:shortVersionString="0.9.0"
+                length="4092628"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.8.1</title>
             <description><![CDATA[
 <h2>What's New in 0.8.1</h2>

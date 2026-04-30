@@ -7,6 +7,7 @@ import Foundation
 final class AppModel: ObservableObject {
     enum SessionState: Equatable {
         case idle
+        case preparing
         case recording
         case error(String)
     }
@@ -34,6 +35,7 @@ final class AppModel: ObservableObject {
 
     let settings: SettingsStore
     let transcriptionStats = TranscriptionStatsStore()
+    let liveTranscription = LiveTranscriptionService()
 
     var showMainWindow: (() -> Void)?
     var showFloatingPanel: (() -> Void)?
@@ -88,6 +90,16 @@ final class AppModel: ObservableObject {
         audioRecorder.onSystemLevel = { [weak self] level in
             Task { @MainActor [weak self] in
                 self?.systemLevel = level
+            }
+        }
+        audioRecorder.onMicPCM = { [weak self] buffer in
+            Task { @MainActor [weak self] in
+                self?.liveTranscription.ingestMic(buffer)
+            }
+        }
+        audioRecorder.onSystemSampleBuffer = { [weak self] sampleBuffer in
+            Task { @MainActor [weak self] in
+                self?.liveTranscription.ingestSystem(sampleBuffer)
             }
         }
 
@@ -213,7 +225,14 @@ final class AppModel: ObservableObject {
     func toggleRecording() {
         switch sessionState {
         case .idle, .error:
-            startRecording()
+            if settings.confirmMicBeforeRecording {
+                enterPreflight()
+            } else {
+                recordingName = ""
+                beginRecording()
+            }
+        case .preparing:
+            cancelPreflight()
         case .recording:
             stopRecording()
         }
@@ -233,12 +252,56 @@ final class AppModel: ObservableObject {
         return true
     }
 
-    private func startRecording() {
+    // MARK: - Preflight
+
+    func enterPreflight() {
+        switch sessionState {
+        case .idle, .error: break
+        default: return
+        }
+        sessionState = .preparing
+        statusMessage = "Ready to record"
+        recordingName = ""
+        micLevel = 0
+        systemLevel = 0
+        showFloatingPanel?()
+
+        Task {
+            do {
+                try await audioRecorder.startPreview(deviceUID: settings.selectedMicrophoneUID)
+            } catch {
+                fail(with: error.localizedDescription)
+            }
+        }
+    }
+
+    func cancelPreflight() {
+        guard sessionState == .preparing else { return }
+        sessionState = .idle
+        statusMessage = "Ready"
+        Task { await audioRecorder.stopPreview() }
+        hideFloatingPanel?()
+    }
+
+    func confirmAndStartRecording() {
+        guard sessionState == .preparing else { return }
+        Task {
+            await audioRecorder.stopPreview()
+            beginRecording()
+        }
+    }
+
+    func changePreflightMic(uid: String?) {
+        settings.selectedMicrophoneUID = uid
+        guard sessionState == .preparing else { return }
+        audioRecorder.switchPreviewDevice(uid: uid)
+    }
+
+    private func beginRecording() {
         sessionState = .recording
         statusMessage = "Recording..."
         recordingStartedAt = Date()
         recordingDuration = 0
-        recordingName = ""
         currentScreenshots = []
         screenshotCount = 0
         showFloatingPanel?()
@@ -258,6 +321,9 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 _ = try await audioRecorder.start(deviceUID: settings.selectedMicrophoneUID)
+                if settings.liveSubtitlesEnabled && !settings.assemblyAIKey.isEmpty {
+                    liveTranscription.start(apiKey: settings.assemblyAIKey)
+                }
             } catch {
                 fail(with: error.localizedDescription)
             }
@@ -278,6 +344,8 @@ final class AppModel: ObservableObject {
         if settings.soundEffectsEnabled {
             soundPlayer.play(.recordingStopped, soundName: settings.stopRecordingSound)
         }
+
+        liveTranscription.stop()
 
         Task {
             guard let url = await audioRecorder.stop() else {
@@ -567,7 +635,11 @@ final class AppModel: ObservableObject {
         return parts.joined(separator: "\n")
     }
 
-    func buildHeadlessCodingPrompt(for recording: Recording, project: HeadlessCodingProject? = nil) -> String {
+    func buildHeadlessCodingPrompt(
+        for recording: Recording,
+        project: HeadlessCodingProject? = nil,
+        extraInstructions: String? = nil
+    ) -> String {
         let speakerNames = loadSpeakerNames(for: recording)
         let rawTranscript = readTranscript(for: recording) ?? ""
         let transcript = applyingSpeakerNames(speakerNames, to: rawTranscript)
@@ -580,19 +652,24 @@ final class AppModel: ObservableObject {
         let recordingName = recording.name ?? "Untitled Recording"
         let speakerList = speakerNames.values.filter { !$0.isEmpty }.joined(separator: ", ")
         let template = project?.customPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let extras = extraInstructions?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         if !template.isEmpty {
             return renderHeadlessCodingPromptTemplate(
                 template,
                 recordingName: recordingName,
                 transcriptDate: dateStr,
-                transcript: transcript
+                transcript: transcript,
+                extraInstructions: extras
             )
         }
 
         var prompt = "Here is the transcript from a meeting recorded on \(dateStr), titled '\(recordingName)'.\n\n"
         if !speakerList.isEmpty {
             prompt += "Speakers: \(speakerList)\n\n"
+        }
+        if !extras.isEmpty {
+            prompt += "Additional context from the user:\n\(extras)\n\n"
         }
         prompt += transcript
 
@@ -603,7 +680,8 @@ final class AppModel: ObservableObject {
         _ template: String,
         recordingName: String,
         transcriptDate: String,
-        transcript: String
+        transcript: String,
+        extraInstructions: String = ""
     ) -> String {
         let replacements = [
             "{{meetingName}}": recordingName,
@@ -620,20 +698,30 @@ final class AppModel: ObservableObject {
         rendered = rendered.replacingOccurrences(of: "{{transcript}}", with: "")
 
         let trimmed = rendered.trimmingCharacters(in: .whitespacesAndNewlines)
+        let extrasBlock = extraInstructions.isEmpty
+            ? ""
+            : "Additional context from the user:\n\(extraInstructions)\n\n"
+
         guard !trimmed.isEmpty else {
-            return transcript
+            return extrasBlock + transcript
         }
 
         if transcript.isEmpty {
-            return trimmed
+            return trimmed + (extrasBlock.isEmpty ? "" : "\n\n\(extrasBlock.trimmingCharacters(in: .whitespacesAndNewlines))")
         }
 
-        return "\(trimmed)\n\nTranscript:\n\(transcript)"
+        return "\(trimmed)\n\n\(extrasBlock)Transcript:\n\(transcript)"
     }
 
     func renameRecording(id: UUID, name: String) {
         guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
         recordings[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : name.trimmingCharacters(in: .whitespacesAndNewlines)
+        recordingStore.save(recordings)
+    }
+
+    func toggleManuallyProcessed(recordingID: UUID) {
+        guard let index = recordings.firstIndex(where: { $0.id == recordingID }) else { return }
+        recordings[index].manuallyProcessedAt = recordings[index].manuallyProcessedAt == nil ? Date() : nil
         recordingStore.save(recordings)
     }
 

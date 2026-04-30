@@ -149,6 +149,7 @@ struct Recording: Codable, Identifiable {
     var claudeCodeProject: String?
     var codexSentAt: Date?
     var codexProject: String?
+    var manuallyProcessedAt: Date?
 
     enum TranscriptionStatus: String, Codable {
         case none

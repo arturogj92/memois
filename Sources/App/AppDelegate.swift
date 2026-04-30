@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 guard let self else { return }
-                if state != .recording {
+                if state != .recording && state != .preparing {
                     self.dockTabController.hide()
                 }
             }

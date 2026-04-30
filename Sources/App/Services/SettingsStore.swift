@@ -36,6 +36,10 @@ final class SettingsStore: ObservableObject {
         didSet { userDefaults.set(selectedMicrophoneUID, forKey: Keys.selectedMicrophoneUID) }
     }
 
+    @Published var confirmMicBeforeRecording: Bool {
+        didSet { userDefaults.set(confirmMicBeforeRecording, forKey: Keys.confirmMicBeforeRecording) }
+    }
+
     @Published var soundEffectsEnabled: Bool {
         didSet { userDefaults.set(soundEffectsEnabled, forKey: Keys.soundEffectsEnabled) }
     }
@@ -76,6 +80,22 @@ final class SettingsStore: ObservableObject {
 
     @Published var speakerDiarization: Bool {
         didSet { userDefaults.set(speakerDiarization, forKey: Keys.speakerDiarization) }
+    }
+
+    @Published var liveSubtitlesEnabled: Bool {
+        didSet { userDefaults.set(liveSubtitlesEnabled, forKey: Keys.liveSubtitlesEnabled) }
+    }
+
+    @Published var liveSubtitlesPanelExpanded: Bool {
+        didSet { userDefaults.set(liveSubtitlesPanelExpanded, forKey: Keys.liveSubtitlesPanelExpanded) }
+    }
+
+    @Published var liveSubtitlesPanelHeight: Double {
+        didSet { userDefaults.set(liveSubtitlesPanelHeight, forKey: Keys.liveSubtitlesPanelHeight) }
+    }
+
+    @Published var liveSubtitlesPanelWidth: Double {
+        didSet { userDefaults.set(liveSubtitlesPanelWidth, forKey: Keys.liveSubtitlesPanelWidth) }
     }
 
     @Published var startAtLogin: Bool {
@@ -136,6 +156,7 @@ final class SettingsStore: ObservableObject {
             modifiers: SettingsStore.defaultModifierFlags
         )
         self.selectedMicrophoneUID = userDefaults.string(forKey: Keys.selectedMicrophoneUID)
+        self.confirmMicBeforeRecording = userDefaults.object(forKey: Keys.confirmMicBeforeRecording) as? Bool ?? true
         self.soundEffectsEnabled = userDefaults.object(forKey: Keys.soundEffectsEnabled) as? Bool ?? true
         self.startRecordingSound = userDefaults.string(forKey: Keys.startRecordingSound) ?? "Frog"
         self.stopRecordingSound = userDefaults.string(forKey: Keys.stopRecordingSound) ?? "Pop"
@@ -145,6 +166,10 @@ final class SettingsStore: ObservableObject {
         self.floatingPanelY = userDefaults.object(forKey: Keys.floatingPanelY) as? Double
         self.transcriptionModel = userDefaults.string(forKey: Keys.transcriptionModel) ?? "best"
         self.speakerDiarization = userDefaults.object(forKey: Keys.speakerDiarization) as? Bool ?? true
+        self.liveSubtitlesEnabled = userDefaults.object(forKey: Keys.liveSubtitlesEnabled) as? Bool ?? false
+        self.liveSubtitlesPanelExpanded = userDefaults.object(forKey: Keys.liveSubtitlesPanelExpanded) as? Bool ?? true
+        self.liveSubtitlesPanelHeight = userDefaults.object(forKey: Keys.liveSubtitlesPanelHeight) as? Double ?? 480
+        self.liveSubtitlesPanelWidth = userDefaults.object(forKey: Keys.liveSubtitlesPanelWidth) as? Double ?? 320
         self.startAtLogin = userDefaults.object(forKey: Keys.startAtLogin) as? Bool ?? false
         self.hideDockIcon = userDefaults.object(forKey: Keys.hideDockIcon) as? Bool ?? false
         if let data = userDefaults.data(forKey: Keys.claudeCodeProjects),
@@ -291,6 +316,7 @@ private enum Keys {
     static let screenshotShortcutModifierFlagsRawValue = "settings.screenshotShortcutModifierFlagsRawValue"
     static let screenshotShortcutDescription = "settings.screenshotShortcutDescription"
     static let selectedMicrophoneUID = "settings.selectedMicrophoneUID"
+    static let confirmMicBeforeRecording = "settings.confirmMicBeforeRecording"
     static let soundEffectsEnabled = "settings.soundEffectsEnabled"
     static let startRecordingSound = "settings.startRecordingSound"
     static let stopRecordingSound = "settings.stopRecordingSound"
@@ -300,6 +326,10 @@ private enum Keys {
     static let floatingPanelY = "settings.floatingPanelY"
     static let transcriptionModel = "settings.transcriptionModel"
     static let speakerDiarization = "settings.speakerDiarization"
+    static let liveSubtitlesEnabled = "settings.liveSubtitlesEnabled"
+    static let liveSubtitlesPanelExpanded = "settings.liveSubtitlesPanelExpanded"
+    static let liveSubtitlesPanelHeight = "settings.liveSubtitlesPanelHeight"
+    static let liveSubtitlesPanelWidth = "settings.liveSubtitlesPanelWidth"
     static let startAtLogin = "settings.startAtLogin"
     static let hideDockIcon = "settings.hideDockIcon"
     static let claudeCodeProjects = "settings.claudeCodeProjects"

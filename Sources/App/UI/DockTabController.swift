@@ -32,7 +32,11 @@ final class DockTabController {
         var panelRef: NonActivatingPanel?
         let tabView = DockTabView(
             model: model,
+            settings: settings,
+            liveTranscription: model.liveTranscription,
             onStop: { @MainActor in model.toggleRecording() },
+            onStartFromPreflight: { @MainActor in model.confirmAndStartRecording() },
+            onCancelPreflight: { @MainActor in model.cancelPreflight() },
             onExpandChanged: { @MainActor expanded in
                 guard let p = panelRef else { return }
                 p.allowKeyboard = expanded
@@ -47,7 +51,7 @@ final class DockTabController {
 
         let thePanel = NonActivatingPanel(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 120),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -80,6 +84,16 @@ final class DockTabController {
             }
             .store(in: &cancellables)
 
+        // Save panel size when user resizes the panel (not programmatic resizes)
+        NotificationCenter.default.publisher(for: NSWindow.didResizeNotification, object: panel)
+            .sink { [weak self] _ in
+                guard let self, !self.isRepositioning else { return }
+                let size = self.panel.frame.size
+                self.settings.liveSubtitlesPanelWidth = Double(size.width)
+                self.settings.liveSubtitlesPanelHeight = Double(size.height)
+            }
+            .store(in: &cancellables)
+
         // React to toggle changes
         settings.$floatingPanelFreePosition
             .dropFirst()
@@ -89,6 +103,22 @@ final class DockTabController {
                 self.panel.isMovableByWindowBackground = enabled
                 if !enabled {
                     self.reposition()
+                }
+            }
+            .store(in: &cancellables)
+
+        // Make panel key during preflight so the TextField, picker, and
+        // Enter/Esc shortcuts work.
+        model.$sessionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak panelRef] state in
+                guard let self, let p = panelRef else { return }
+                let needsKey = (state == .preparing)
+                p.allowKeyboard = needsKey
+                if needsKey {
+                    if self.isVisible { p.makeKey() }
+                } else if state != .recording {
+                    p.resignKey()
                 }
             }
             .store(in: &cancellables)
@@ -109,20 +139,18 @@ final class DockTabController {
         isRepositioning = true
         defer { isRepositioning = false }
 
+        let width = CGFloat(settings.liveSubtitlesPanelWidth)
+        let height = CGFloat(settings.liveSubtitlesPanelHeight)
+
         // If free positioning is on and we have saved coordinates, use them
         if settings.floatingPanelFreePosition,
            let savedX = settings.floatingPanelX,
            let savedY = settings.floatingPanelY {
-            let width: CGFloat = 300
-            let height: CGFloat = 250
             panel.setFrame(NSRect(x: savedX, y: savedY, width: width, height: height), display: true)
             return
         }
 
         let screen = focusedScreen()
-        let width: CGFloat = 300
-        let height: CGFloat = 250
-
         let x = screen.visibleFrame.midX - (width / 2)
         let dockHeight = max(screen.visibleFrame.minY - screen.frame.minY, 70)
         let y = screen.frame.minY + dockHeight + 4
@@ -181,17 +209,10 @@ final class DockTabController {
     // MARK: - Mouse tracking: only accept events when cursor is over the pill
 
     private func pillScreenRect() -> NSRect {
-        let f = panel.frame
-        // Use wider/taller rect when panel accepts keyboard (expanded state)
-        let isExpanded = (panel as? NonActivatingPanel)?.allowKeyboard ?? false
-        let pillWidth: CGFloat = isExpanded ? 270 : 140
-        let pillHeight: CGFloat = isExpanded ? 80 : 44
-        return NSRect(
-            x: f.midX - pillWidth / 2,
-            y: f.minY,
-            width: pillWidth,
-            height: pillHeight
-        )
+        // Now that the hosting controller auto-sizes, the panel.frame reflects
+        // the actual pill bounds. Use it directly so click area matches what
+        // the user sees — no more dead zones above the visible pill.
+        return panel.frame
     }
 
     private func setupMouseTracking() {

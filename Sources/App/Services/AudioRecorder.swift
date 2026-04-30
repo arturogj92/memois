@@ -8,7 +8,16 @@ final class AudioRecorder: NSObject, ObservableObject {
     var onMicLevel: ((Float) -> Void)?
     var onSystemLevel: ((Float) -> Void)?
 
+    /// Called from the audio thread with the converted mic PCM buffer
+    /// (Float32, 48 kHz, mono). Do not block.
+    var onMicPCM: ((AVAudioPCMBuffer) -> Void)?
+
+    /// Called from the audio thread with the system audio sample buffer
+    /// (Float32, 48 kHz, mono per SCStreamConfiguration). Do not block.
+    var onSystemSampleBuffer: ((CMSampleBuffer) -> Void)?
+
     @Published private(set) var isRecording = false
+    @Published private(set) var isPreviewing = false
 
     private var scStream: SCStream?
     private var micEngine: AVAudioEngine?
@@ -19,6 +28,11 @@ final class AudioRecorder: NSObject, ObservableObject {
     private var sysStartTime: CMTime?
     private var micStartTime: CMTime?
     private var streamOutput: AudioStreamOutput?
+
+    // Preview-only resources (preflight panel)
+    private var previewStream: SCStream?
+    private var previewEngine: AVAudioEngine?
+    private var previewStreamOutput: AudioStreamOutput?
 
     // Chunked recording (1 min segments for crash safety)
     private var chunkURLs: [URL] = []
@@ -72,6 +86,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         let stream = SCStream(filter: filter, configuration: config, delegate: nil)
         let output = AudioStreamOutput { [weak self] sampleBuffer in
             self?.handleSystemAudio(sampleBuffer)
+            self?.onSystemSampleBuffer?(sampleBuffer)
         }
         streamOutput = output
         try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
@@ -122,6 +137,8 @@ final class AudioRecorder: NSObject, ObservableObject {
             if let cmBuffer = converted.toCMSampleBuffer(sampleRate: self.sampleRate) {
                 self.handleMicAudio(cmBuffer)
             }
+
+            self.onMicPCM?(converted)
         }
 
         engine.prepare()
@@ -196,6 +213,87 @@ final class AudioRecorder: NSObject, ObservableObject {
         let finalURL = await mergeChunks(chunks: stoppingChunks, folder: stoppingFolder)
 
         return finalURL
+    }
+
+    // MARK: - Preview (preflight panel)
+
+    /// Starts a non-recording preview that feeds onMicLevel / onSystemLevel
+    /// so the UI can show live input/output bars before committing to record.
+    func startPreview(deviceUID: String?) async throws {
+        guard !isRecording else { return }
+        if isPreviewing { await stopPreview() }
+
+        // System audio preview via ScreenCaptureKit
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        guard let display = content.displays.first else {
+            throw NSError(domain: "Memois", code: 10, userInfo: [NSLocalizedDescriptionKey: "No display found"])
+        }
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let config = SCStreamConfiguration()
+        config.capturesAudio = true
+        config.excludesCurrentProcessAudio = true
+        config.sampleRate = Int(sampleRate)
+        config.channelCount = channels
+        config.width = 2
+        config.height = 2
+        config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+
+        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+        let output = AudioStreamOutput { [weak self] sampleBuffer in
+            self?.computeSystemLevel(sampleBuffer)
+        }
+        previewStreamOutput = output
+        try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
+        try await stream.startCapture()
+        previewStream = stream
+
+        // Mic preview via AVAudioEngine
+        try startPreviewEngine(deviceUID: deviceUID)
+
+        isPreviewing = true
+    }
+
+    /// Hot-swap the preview's input device without tearing down the SCStream.
+    func switchPreviewDevice(uid: String?) {
+        guard isPreviewing else { return }
+        previewEngine?.inputNode.removeTap(onBus: 0)
+        previewEngine?.stop()
+        previewEngine = nil
+        try? startPreviewEngine(deviceUID: uid)
+    }
+
+    func stopPreview() async {
+        let stoppingStream = previewStream
+        let stoppingEngine = previewEngine
+        previewStream = nil
+        previewEngine = nil
+        previewStreamOutput = nil
+
+        stoppingEngine?.inputNode.removeTap(onBus: 0)
+        stoppingEngine?.stop()
+
+        if let stream = stoppingStream {
+            try? await stream.stopCapture()
+        }
+
+        isPreviewing = false
+        onMicLevel?(0)
+        onSystemLevel?(0)
+    }
+
+    private func startPreviewEngine(deviceUID: String?) throws {
+        let engine = AVAudioEngine()
+        if let uid = deviceUID {
+            setInputDevice(engine: engine, uid: uid)
+        }
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.inputFormat(forBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
+            self?.computeAudioLevel(buffer: buffer)
+        }
+        engine.prepare()
+        try engine.start()
+        previewEngine = engine
     }
 
     // MARK: - Chunk Management
