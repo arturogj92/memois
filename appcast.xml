@@ -7,6 +7,26 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.9.2</title>
+            <description><![CDATA[
+<h2>What's New in 0.9.2</h2>
+<ul>
+    <li><strong>Global shortcut fix</strong> — Option+Shift+R (record) and Option+Shift+S (screenshot) now work reliably on macOS Tahoe (26.x). Rewrote the shortcut layer on top of Carbon's RegisterEventHotKey, the same API used by Spotlight and Raycast, which sidesteps the Tahoe TCC ghost-binding bug that broke CGEvent taps even when Input Monitoring was granted.</li>
+    <li><strong>One less permission</strong> — Memois no longer needs Input Monitoring. The Permissions screen drops to just Microphone and Screen Recording.</li>
+</ul>
+            ]]></description>
+            <pubDate>Fri, 01 May 2026 19:07:25 +0200</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.9.2/Memois-v0.9.2-macOS.zip"
+                sparkle:version="9"
+                sparkle:shortVersionString="0.9.2"
+                length="4094472"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.9.1</title>
             <description><![CDATA[
 <h2>What's New in 0.9.1</h2>
