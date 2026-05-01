@@ -66,32 +66,37 @@ final class AudioRecorder: NSObject, ObservableObject {
         // Setup first chunk writer
         try setupChunkWriter()
 
-        // Setup ScreenCaptureKit for system audio
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        guard let display = content.displays.first else {
-            throw NSError(domain: "Memois", code: 1, userInfo: [NSLocalizedDescriptionKey: "No display found"])
-        }
+        // Setup ScreenCaptureKit for system audio (best-effort; recording continues
+        // mic-only if Screen Recording permission is missing or unavailable).
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            guard let display = content.displays.first else {
+                throw NSError(domain: "Memois", code: 1, userInfo: [NSLocalizedDescriptionKey: "No display found"])
+            }
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let config = SCStreamConfiguration()
+            config.capturesAudio = true
+            config.excludesCurrentProcessAudio = true
+            config.sampleRate = Int(sampleRate)
+            config.channelCount = channels
+            config.width = 2
+            config.height = 2
+            config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
 
-        let filter = SCContentFilter(display: display, excludingWindows: [])
-        let config = SCStreamConfiguration()
-        config.capturesAudio = true
-        config.excludesCurrentProcessAudio = true
-        config.sampleRate = Int(sampleRate)
-        config.channelCount = channels
-        // We don't need video
-        config.width = 2
-        config.height = 2
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 1) // minimal video frames
-
-        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-        let output = AudioStreamOutput { [weak self] sampleBuffer in
-            self?.handleSystemAudio(sampleBuffer)
-            self?.onSystemSampleBuffer?(sampleBuffer)
+            let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+            let output = AudioStreamOutput { [weak self] sampleBuffer in
+                self?.handleSystemAudio(sampleBuffer)
+                self?.onSystemSampleBuffer?(sampleBuffer)
+            }
+            streamOutput = output
+            try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
+            try await stream.startCapture()
+            scStream = stream
+        } catch {
+            MemoisDebugLog.shared.write("recorder.start: system audio unavailable, mic-only: \(error.localizedDescription)")
+            scStream = nil
+            streamOutput = nil
         }
-        streamOutput = output
-        try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
-        try await stream.startCapture()
-        scStream = stream
 
         // Setup AVAudioEngine for microphone
         let engine = AVAudioEngine()
@@ -223,29 +228,36 @@ final class AudioRecorder: NSObject, ObservableObject {
         guard !isRecording else { return }
         if isPreviewing { await stopPreview() }
 
-        // System audio preview via ScreenCaptureKit
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        guard let display = content.displays.first else {
-            throw NSError(domain: "Memois", code: 10, userInfo: [NSLocalizedDescriptionKey: "No display found"])
-        }
-        let filter = SCContentFilter(display: display, excludingWindows: [])
-        let config = SCStreamConfiguration()
-        config.capturesAudio = true
-        config.excludesCurrentProcessAudio = true
-        config.sampleRate = Int(sampleRate)
-        config.channelCount = channels
-        config.width = 2
-        config.height = 2
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+        // System audio preview via ScreenCaptureKit (best-effort; preview shows
+        // mic-only if Screen Recording is denied so the user can still confirm).
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            guard let display = content.displays.first else {
+                throw NSError(domain: "Memois", code: 10, userInfo: [NSLocalizedDescriptionKey: "No display found"])
+            }
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let config = SCStreamConfiguration()
+            config.capturesAudio = true
+            config.excludesCurrentProcessAudio = true
+            config.sampleRate = Int(sampleRate)
+            config.channelCount = channels
+            config.width = 2
+            config.height = 2
+            config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
 
-        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-        let output = AudioStreamOutput { [weak self] sampleBuffer in
-            self?.computeSystemLevel(sampleBuffer)
+            let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+            let output = AudioStreamOutput { [weak self] sampleBuffer in
+                self?.computeSystemLevel(sampleBuffer)
+            }
+            previewStreamOutput = output
+            try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
+            try await stream.startCapture()
+            previewStream = stream
+        } catch {
+            MemoisDebugLog.shared.write("recorder.preview: system audio unavailable, mic-only: \(error.localizedDescription)")
+            previewStream = nil
+            previewStreamOutput = nil
         }
-        previewStreamOutput = output
-        try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
-        try await stream.startCapture()
-        previewStream = stream
 
         // Mic preview via AVAudioEngine
         try startPreviewEngine(deviceUID: deviceUID)

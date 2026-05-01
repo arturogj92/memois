@@ -44,6 +44,8 @@ struct MainWindowView: View {
     @State private var isRefreshingExecutableResolutions = false
     @State private var pendingSendRequest: PendingSendRequest?
     @State private var extraPromptText: String = ""
+    @State private var pendingDeleteRecording: Recording?
+    @State private var showClearAllConfirm = false
 
     struct PendingSendRequest: Identifiable {
         let id = UUID()
@@ -162,7 +164,7 @@ struct MainWindowView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(sidebarCollapsed ? "Expand" : "Collapse")
+                .tooltip(sidebarCollapsed ? "Expand" : "Collapse")
                 if sidebarCollapsed {
                     Spacer()
                 }
@@ -227,7 +229,7 @@ struct MainWindowView: View {
                     Image(systemName: tab.icon)
                         .font(.system(size: 15))
                         .frame(width: 36, height: 34)
-                        .help(tab.rawValue)
+                        .tooltip(tab.rawValue)
                 } else {
                     HStack(spacing: 9) {
                         Image(systemName: tab.icon)
@@ -326,11 +328,25 @@ struct MainWindowView: View {
                 Spacer()
                 if !model.recordings.isEmpty {
                     Button("Clear All", role: .destructive) {
-                        for recording in model.recordings {
-                            model.deleteRecording(id: recording.id)
-                        }
+                        showClearAllConfirm = true
                     }
                     .controlSize(.small)
+                    .pointerCursor()
+                    .tooltip("Delete all recordings permanently — audio, transcripts and screenshots", alignment: .topTrailing)
+                    .confirmationDialog(
+                        "Delete all \(model.recordings.count) recordings?",
+                        isPresented: $showClearAllConfirm,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete All", role: .destructive) {
+                            for recording in model.recordings {
+                                model.deleteRecording(id: recording.id)
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This will permanently delete every recording — audio, transcripts and screenshots. This cannot be undone.")
+                    }
                 }
             }
 
@@ -353,8 +369,15 @@ struct MainWindowView: View {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
                             .fill(model.sessionState == .recording ? Color.brandPink.opacity(0.3) : .white.opacity(0.08))
                     )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .pointerCursor()
+                .tooltip(model.sessionState == .recording
+                    ? "Stop the current recording"
+                    : "Start a new recording — uses your default mic and captures system audio if Screen Recording is granted",
+                    alignment: .topLeading
+                )
 
                 Button {
                     let panel = NSOpenPanel()
@@ -379,8 +402,11 @@ struct MainWindowView: View {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
                             .fill(.white.opacity(0.08))
                     )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .pointerCursor()
+                .tooltip("Import an external audio or video file as a new recording", alignment: .topLeading)
 
                 Spacer()
             }
@@ -445,10 +471,30 @@ struct MainWindowView: View {
                 }
             }
         }
+        .confirmationDialog(
+            pendingDeleteRecording.map { "Delete \"\($0.name ?? $0.createdAt.formatted(date: .abbreviated, time: .shortened))\"?" } ?? "",
+            isPresented: Binding(
+                get: { pendingDeleteRecording != nil },
+                set: { if !$0 { pendingDeleteRecording = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDeleteRecording
+        ) { recording in
+            Button("Delete", role: .destructive) {
+                model.deleteRecording(id: recording.id)
+                pendingDeleteRecording = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteRecording = nil
+            }
+        } message: { _ in
+            Text("This will permanently delete the audio, transcript and any screenshots for this recording. This cannot be undone.")
+        }
     }
 
     private func recordingRow(_ recording: Recording) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let isProcessed = recording.isProcessed
+        return VStack(alignment: .leading, spacing: 8) {
             // Recording name — editable inline
             HStack(spacing: 4) {
                 if editingNameID == recording.id {
@@ -479,40 +525,50 @@ struct MainWindowView: View {
                     Text(recording.name ?? recording.createdAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white.opacity(recording.name != nil ? 0.9 : 0.6))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .onTapGesture(count: 2) {
+                            editingNameText = recording.name ?? ""
+                            editingNameID = recording.id
+                        }
+                        .tooltip("Double-click to rename")
 
                     Button {
                         editingNameText = recording.name ?? ""
                         editingNameID = recording.id
                     } label: {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.3))
-                            .frame(width: 24, height: 24)
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .frame(width: 22, height: 22)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(.white.opacity(0.06))
+                            )
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .pointerCursor()
+                    .tooltip("Rename")
+
+                    Spacer(minLength: 8)
+
+                    Text(recording.formattedDuration)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(.white.opacity(0.08)))
+
+                    statusBadge(for: recording)
                 }
             }
 
-            HStack {
-                if recording.name != nil {
-                    Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.6))
-                }
-
-                Spacer()
-
-                // Duration badge
-                Text(recording.formattedDuration)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(.white.opacity(0.08)))
-
-                // Status badge
-                statusBadge(for: recording)
+            if recording.name != nil {
+                Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // Show error message if failed
@@ -544,15 +600,17 @@ struct MainWindowView: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.55))
                         .frame(width: 16, height: 16)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(.white.opacity(0.06))
+                        )
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.white.opacity(0.06))
-                )
-                .help(recording.transcriptionURL != nil ? "Reveal transcript in Finder" : "Reveal recording in Finder")
+                .pointerCursor()
+                .tooltip(recording.transcriptionURL != nil ? "Reveal transcript in Finder" : "Reveal recording in Finder", alignment: .topLeading)
 
                 Spacer()
 
@@ -575,15 +633,18 @@ struct MainWindowView: View {
                             }
                         }
                         .foregroundStyle(.white.opacity(0.8))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.brandYellow.opacity(0.2))
+                        )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.brandYellow.opacity(0.2))
-                    )
+                    .pointerCursor()
                     .disabled(model.repairingRecordingIDs.contains(recording.id))
+                    .tooltip("Repair this recording — rebuilds the audio file from chunks if it's missing or corrupted", alignment: .topTrailing)
                 }
 
                 if recording.transcriptionStatus == .none || recording.transcriptionStatus == .failed || recording.transcriptionStatus == .processing {
@@ -593,13 +654,20 @@ struct MainWindowView: View {
                         Text(recording.transcriptionStatus == .processing ? "Retry" : "Transcribe")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.8))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.brandCyan.opacity(0.2))
+                            )
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.brandCyan.opacity(0.2))
+                    .pointerCursor()
+                    .tooltip(recording.transcriptionStatus == .processing
+                        ? "Retry transcription — re-uploads the audio to AssemblyAI"
+                        : "Transcribe this recording with AssemblyAI",
+                        alignment: .topTrailing
                     )
                 }
 
@@ -613,16 +681,18 @@ struct MainWindowView: View {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 11, weight: .medium))
                             .frame(width: 16, height: 16)
-                        .foregroundStyle(.white.opacity(0.8))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.brandYellow.opacity(0.15))
+                            )
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.brandYellow.opacity(0.15))
-                    )
-                    .help("Copy transcript")
+                    .pointerCursor()
+                    .tooltip("Copy the full transcript (with title and screenshot paths) to the clipboard", alignment: .topTrailing)
 
                     manuallyProcessedToggle(for: recording)
 
@@ -637,35 +707,41 @@ struct MainWindowView: View {
                             .font(.system(size: 11, weight: .medium))
                             .frame(width: 16, height: 16)
                             .foregroundStyle(.white.opacity(0.8))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.brandGreen.opacity(0.2))
+                            )
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.brandGreen.opacity(0.2))
-                    )
-                    .help("Open transcript")
+                    .pointerCursor()
+                    .tooltip("Open the transcript viewer with playback, search and speaker editing", alignment: .topTrailing)
                 }
 
                 Button {
-                    model.deleteRecording(id: recording.id)
+                    pendingDeleteRecording = recording
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.brandPink.opacity(0.7))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 7)
-                .help("Delete recording")
+                .pointerCursor()
+                .tooltip("Delete this recording permanently (audio, transcript, screenshots)", alignment: .topTrailing)
             }
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.surfaceCard)
+                .fill(isProcessed ? Color.surfaceCard.opacity(0.4) : Color.surfaceCard)
         )
+        .opacity(isProcessed ? 0.55 : 1.0)
+        .animation(.easeInOut(duration: 0.2), value: isProcessed)
     }
 
     private func savingSkeletonRow() -> some View {
@@ -716,20 +792,26 @@ struct MainWindowView: View {
                 .font(.system(size: 11, weight: .medium))
                 .frame(width: 16, height: 16)
                 .foregroundStyle(isProcessed ? Color.brandPurple : .white.opacity(0.8))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.brandPurple.opacity(isProcessed ? 0.25 : 0.1))
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.brandPurple.opacity(isProcessed ? 0.25 : 0.1))
+        .pointerCursor()
+        .tooltip(isProcessed
+            ? "Manually unmark as processed — recording will appear active again in the list"
+            : "Manually mark as processed — recording fades out as 'done'",
+            alignment: .topTrailing
         )
-        .help(isProcessed ? "Mark as unprocessed" : "Mark as processed")
     }
 
     private func statusBadge(for recording: Recording) -> some View {
         let (label, color): (String, Color) = {
-            if recording.manuallyProcessedAt != nil {
+            if recording.isProcessed {
                 return ("Processed", .brandPurple)
             }
             switch recording.transcriptionStatus {
@@ -1309,7 +1391,7 @@ struct MainWindowView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Preview")
+            .tooltip("Preview")
         }
     }
 
@@ -1716,21 +1798,24 @@ struct MainWindowView: View {
             }
             .foregroundStyle(.white.opacity(0.8))
             .frame(width: 16, height: 16)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(wasSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.06))
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(wasSent ? Color.brandCyan.opacity(0.15) : .white.opacity(0.06))
-        )
         .disabled(isSending)
-        .help(
+        .pointerCursor()
+        .tooltip(
             isSending
-                ? "Sending to \(agent.displayName)"
+                ? "Sending transcript to \(agent.displayName)…"
                 : wasSent
-                    ? "Sent to \(recording.projectName(for: agent) ?? agent.displayName)"
-                    : agent.buttonTitle
+                    ? "Already sent to \(recording.projectName(for: agent) ?? agent.displayName) — click to send to another project"
+                    : "Send transcript to \(agent.displayName) — pick a saved project or choose a directory",
+            alignment: .topTrailing
         )
     }
 
@@ -2078,5 +2163,75 @@ private struct ShimmerModifier: ViewModifier {
 extension View {
     func shimmering() -> some View {
         modifier(ShimmerModifier())
+    }
+
+    /// Switches the macOS cursor to the pointing hand while hovered. Use on
+    /// custom-styled buttons that don't get the cursor change for free.
+    func pointerCursor() -> some View {
+        onHover { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+    }
+
+    /// Custom tooltip that bypasses SwiftUI's flaky native help on recent
+    /// macOS versions. Appears 500ms after hover with a fade. Pass
+    /// `.topTrailing` for buttons near the right window edge so the tooltip
+    /// extends left, or `.topLeading` for buttons near the left edge.
+    func tooltip(_ text: String, alignment: Alignment = .top) -> some View {
+        modifier(HoverTooltipModifier(text: text, alignment: alignment))
+    }
+}
+
+private struct HoverTooltipModifier: ViewModifier {
+    let text: String
+    let alignment: Alignment
+    @State private var visible = false
+    @State private var pendingTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                pendingTask?.cancel()
+                if hovering {
+                    pendingTask = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        if !Task.isCancelled {
+                            visible = true
+                        }
+                    }
+                } else {
+                    visible = false
+                }
+            }
+            .overlay(alignment: alignment) {
+                if visible {
+                    Text(text)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .frame(width: 240)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.black.opacity(0.92))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                                )
+                        )
+                        .fixedSize(horizontal: true, vertical: true)
+                        .alignmentGuide(.top) { d in d[.bottom] + 6 }
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            .compositingGroup()
+            .zIndex(visible ? 1000 : 0)
+            .animation(.easeInOut(duration: 0.12), value: visible)
     }
 }

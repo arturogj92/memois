@@ -151,6 +151,12 @@ struct Recording: Codable, Identifiable {
     var codexProject: String?
     var manuallyProcessedAt: Date?
 
+    /// True if this recording has been processed by any signal:
+    /// manual toggle, dispatched to Claude Code, or dispatched to Codex.
+    var isProcessed: Bool {
+        manuallyProcessedAt != nil || claudeCodeSentAt != nil || codexSentAt != nil
+    }
+
     enum TranscriptionStatus: String, Codable {
         case none
         case uploading

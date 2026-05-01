@@ -182,19 +182,25 @@ final class AppModel: ObservableObject {
 
     func refreshPermissions() {
         permissionStatus = permissions.currentStatus()
+        MemoisDebugLog.shared.write("refreshPermissions mic=\(permissionStatus.microphoneGranted) screen=\(permissionStatus.screenRecordingGranted) input=\(permissionStatus.inputMonitoringGranted)")
 
+        // Only Microphone is mandatory to record. Screen Recording and Input
+        // Monitoring are best-effort: if they're missing we still record
+        // (mic-only / no global shortcut) and surface a non-blocking notice.
         if !permissionStatus.microphoneGranted {
             sessionState = .error("Microphone access required")
             statusMessage = "Microphone access required"
-        } else if !permissionStatus.screenRecordingGranted {
-            sessionState = .error("Screen Recording permission required")
-            statusMessage = "Screen Recording permission required"
-        } else if !permissionStatus.inputMonitoringGranted {
-            sessionState = .error("Input Monitoring required")
-            statusMessage = "Input Monitoring required"
-        } else if case .error = sessionState {
-            sessionState = .idle
-            statusMessage = "Ready"
+        } else {
+            if case .error = sessionState {
+                sessionState = .idle
+            }
+            if !permissionStatus.screenRecordingGranted {
+                statusMessage = "Ready (mic only — grant Screen Recording for system audio)"
+            } else if !permissionStatus.inputMonitoringGranted {
+                statusMessage = "Ready (grant Input Monitoring for global shortcut)"
+            } else {
+                statusMessage = "Ready"
+            }
         }
     }
 
@@ -208,11 +214,13 @@ final class AppModel: ObservableObject {
 
     func requestScreenRecordingPermission() {
         permissions.requestScreenRecordingAccess()
+        permissions.openScreenRecordingSettings()
         refreshPermissions()
     }
 
     func requestInputMonitoringPermission() {
         permissions.requestInputMonitoringAccess()
+        permissions.openInputMonitoringSettings()
         refreshPermissions()
     }
 
@@ -239,7 +247,11 @@ final class AppModel: ObservableObject {
     }
 
     func handleShortcutPressed() {
-        guard ensureReadyForRecording() else { return }
+        MemoisDebugLog.shared.write("record button/shortcut pressed; sessionState=\(sessionState)")
+        guard ensureReadyForRecording() else {
+            MemoisDebugLog.shared.write("record blocked by ensureReadyForRecording (sessionState=\(sessionState))")
+            return
+        }
         toggleRecording()
     }
 
@@ -255,9 +267,12 @@ final class AppModel: ObservableObject {
     // MARK: - Preflight
 
     func enterPreflight() {
+        MemoisDebugLog.shared.write("enterPreflight requested; sessionState=\(sessionState)")
         switch sessionState {
         case .idle, .error: break
-        default: return
+        default:
+            MemoisDebugLog.shared.write("enterPreflight aborted: state not idle/error")
+            return
         }
         sessionState = .preparing
         statusMessage = "Ready to record"
@@ -298,6 +313,7 @@ final class AppModel: ObservableObject {
     }
 
     private func beginRecording() {
+        MemoisDebugLog.shared.write("beginRecording")
         sessionState = .recording
         statusMessage = "Recording..."
         recordingStartedAt = Date()
@@ -564,6 +580,11 @@ final class AppModel: ObservableObject {
         case .codex:
             recordings[index].codexSentAt = Date()
             recordings[index].codexProject = projectName
+        }
+
+        // Sending to an AI agent counts as processing the recording.
+        if recordings[index].manuallyProcessedAt == nil {
+            recordings[index].manuallyProcessedAt = Date()
         }
 
         recordingStore.save(recordings)
@@ -891,6 +912,7 @@ final class AppModel: ObservableObject {
     }
 
     private func fail(with message: String) {
+        MemoisDebugLog.shared.write("fail: \(message)")
         micLevel = 0
         systemLevel = 0
         durationTimer?.invalidate()
