@@ -375,7 +375,7 @@ struct MainWindowView: View {
                 .pointerCursor()
                 .tooltip(model.sessionState == .recording
                     ? "Stop the current recording"
-                    : "Start a new recording — uses your default mic and captures system audio if Screen Recording is granted",
+                    : "Start a new recording (mic + system audio)",
                     alignment: .topLeading
                 )
 
@@ -2193,6 +2193,7 @@ private struct HoverTooltipModifier: ViewModifier {
                         .font(.system(size: 11))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
                         .frame(width: 240)
@@ -2204,7 +2205,6 @@ private struct HoverTooltipModifier: ViewModifier {
                                         .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
                                 )
                         )
-                        .fixedSize(horizontal: true, vertical: true)
                         .alignmentGuide(.top) { d in d[.bottom] + 6 }
                         .allowsHitTesting(false)
                         .transition(.opacity)
