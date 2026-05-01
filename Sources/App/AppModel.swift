@@ -182,11 +182,12 @@ final class AppModel: ObservableObject {
 
     func refreshPermissions() {
         permissionStatus = permissions.currentStatus()
-        MemoisDebugLog.shared.write("refreshPermissions mic=\(permissionStatus.microphoneGranted) screen=\(permissionStatus.screenRecordingGranted) input=\(permissionStatus.inputMonitoringGranted)")
+        MemoisDebugLog.shared.write("refreshPermissions mic=\(permissionStatus.microphoneGranted) screen=\(permissionStatus.screenRecordingGranted)")
 
-        // Only Microphone is mandatory to record. Screen Recording and Input
-        // Monitoring are best-effort: if they're missing we still record
-        // (mic-only / no global shortcut) and surface a non-blocking notice.
+        // Only Microphone is mandatory to record. Screen Recording is
+        // best-effort: if missing we still record (mic-only) and surface a
+        // non-blocking notice. The global shortcut uses Carbon HotKey and
+        // doesn't require any TCC permission.
         if !permissionStatus.microphoneGranted {
             sessionState = .error("Microphone access required")
             statusMessage = "Microphone access required"
@@ -196,8 +197,6 @@ final class AppModel: ObservableObject {
             }
             if !permissionStatus.screenRecordingGranted {
                 statusMessage = "Ready (mic only — grant Screen Recording for system audio)"
-            } else if !permissionStatus.inputMonitoringGranted {
-                statusMessage = "Ready (grant Input Monitoring for global shortcut)"
             } else {
                 statusMessage = "Ready"
             }
@@ -205,10 +204,18 @@ final class AppModel: ObservableObject {
     }
 
     func requestMicrophonePermission() {
+        MemoisDebugLog.shared.write("requestMicrophonePermission: Enable clicked")
         Task {
             let granted = await permissions.requestMicrophoneAccess()
+            MemoisDebugLog.shared.write("requestMicrophonePermission: granted=\(granted) status=\(permissions.microphoneAuthStatus)")
             refreshPermissions()
             statusMessage = granted ? "Microphone access granted" : "Microphone access denied"
+            // If macOS didn't deliver a prompt (cached `.denied` state on
+            // recent OSes after a TCC reset), fall back to opening Settings.
+            if !granted && !permissionStatus.microphoneGranted {
+                MemoisDebugLog.shared.write("requestMicrophonePermission: opening Settings as fallback")
+                permissions.openMicrophoneSettings()
+            }
         }
     }
 
@@ -218,15 +225,8 @@ final class AppModel: ObservableObject {
         refreshPermissions()
     }
 
-    func requestInputMonitoringPermission() {
-        permissions.requestInputMonitoringAccess()
-        permissions.openInputMonitoringSettings()
-        refreshPermissions()
-    }
-
     func openScreenRecordingSettings() { permissions.openScreenRecordingSettings() }
     func openMicrophoneSettings() { permissions.openMicrophoneSettings() }
-    func openInputMonitoringSettings() { permissions.openInputMonitoringSettings() }
 
     // MARK: - Recording
 

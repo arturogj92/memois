@@ -1970,6 +1970,7 @@ struct MainWindowView: View {
                 Spacer()
                 Button("Refresh") { model.refreshPermissions() }
                     .controlSize(.small)
+                    .pointerCursor()
             }
 
             card {
@@ -1989,11 +1990,12 @@ struct MainWindowView: View {
                         }
                         Spacer()
                         if !model.permissionStatus.microphoneGranted {
-                            if model.permissionStatus.microphoneStatus == .undetermined {
-                                Button("Enable") { model.requestMicrophonePermission() }.controlSize(.small)
-                            } else {
-                                Button("Settings") { model.openMicrophoneSettings() }.controlSize(.small)
-                            }
+                            Button("Enable") { model.requestMicrophonePermission() }
+                                .controlSize(.small)
+                                .pointerCursor()
+                            Button("Settings") { model.openMicrophoneSettings() }
+                                .controlSize(.small)
+                                .pointerCursor()
                         }
                     }
                     .padding(.vertical, 4)
@@ -2021,28 +2023,6 @@ struct MainWindowView: View {
                     }
                     .padding(.vertical, 4)
 
-                    Divider().opacity(0.2).padding(.vertical, 4)
-
-                    // Input Monitoring
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(model.permissionStatus.inputMonitoringGranted ? Color.brandGreen : Color.brandYellow)
-                            .frame(width: 8, height: 8)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Input Monitoring")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.9))
-                            Text(model.permissionStatus.inputMonitoringGranted ? "Granted" : "Enable in System Settings")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.white.opacity(0.3))
-                        }
-                        Spacer()
-                        if !model.permissionStatus.inputMonitoringGranted {
-                            Button("Enable") { model.requestInputMonitoringPermission() }.controlSize(.small)
-                            Button("Settings") { model.openInputMonitoringSettings() }.controlSize(.small)
-                        }
-                    }
-                    .padding(.vertical, 4)
                 }
             }
         }

@@ -1,5 +1,4 @@
 import AVFoundation
-import CoreGraphics
 import Foundation
 import AppKit
 import ScreenCaptureKit
@@ -14,10 +13,9 @@ struct PermissionStatus {
     let microphoneGranted: Bool
     let microphoneStatus: MicrophoneAuthStatus
     let screenRecordingGranted: Bool
-    let inputMonitoringGranted: Bool
 
     var allGranted: Bool {
-        microphoneGranted && screenRecordingGranted && inputMonitoringGranted
+        microphoneGranted && screenRecordingGranted
     }
 }
 
@@ -28,16 +26,18 @@ final class PermissionManager {
         return PermissionStatus(
             microphoneGranted: micStatus == .granted,
             microphoneStatus: micStatus,
-            screenRecordingGranted: checkScreenRecordingPermission(),
-            inputMonitoringGranted: CGPreflightListenEventAccess()
+            screenRecordingGranted: checkScreenRecordingPermission()
         )
     }
 
     func requestMicrophoneAccess() async -> Bool {
+        MemoisDebugLog.shared.write("requestMicrophoneAccess: AVAudioApplication.recordPermission=\(AVAudioApplication.shared.recordPermission.rawValue) AVCaptureDevice.authStatus=\(AVCaptureDevice.authorizationStatus(for: .audio).rawValue)")
         if microphoneAuthStatus == .granted { return true }
         let granted = await AVAudioApplication.requestRecordPermission()
+        MemoisDebugLog.shared.write("requestMicrophoneAccess: AVAudioApplication.requestRecordPermission returned \(granted)")
         if granted || microphoneAuthStatus == .granted { return true }
         let captureGranted = await AVCaptureDevice.requestAccess(for: .audio)
+        MemoisDebugLog.shared.write("requestMicrophoneAccess: AVCaptureDevice.requestAccess returned \(captureGranted)")
         return captureGranted || microphoneAuthStatus == .granted
     }
 
@@ -48,20 +48,12 @@ final class PermissionManager {
         }
     }
 
-    func requestInputMonitoringAccess() {
-        _ = CGRequestListenEventAccess()
-    }
-
     func openScreenRecordingSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
     }
 
     func openMicrophoneSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
-    }
-
-    func openInputMonitoringSettings() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
     }
 
     var microphoneAuthStatus: MicrophoneAuthStatus {

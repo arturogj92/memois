@@ -25,9 +25,9 @@
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Memois needs microphone access to record your voice during meetings.</string>
+    <string>Memois records your voice for meeting transcription. Allow microphone access to start recording.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Memois needs screen recording permission to capture system audio from meetings.</string>
+    <string>Memois captures system audio (the people you're meeting with) so the transcript includes everyone, not just you.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
