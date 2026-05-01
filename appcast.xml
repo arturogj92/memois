@@ -7,6 +7,25 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.9.3</title>
+            <description><![CDATA[
+<h2>What's New in 0.9.3</h2>
+<ul>
+    <li><strong>Tooltip polish</strong> — Hover tooltips no longer clip the last line behind nearby controls. Fixed a SwiftUI sizing bug in the tooltip background and trimmed the Record button's hint to fit on a single line.</li>
+</ul>
+            ]]></description>
+            <pubDate>Fri, 01 May 2026 19:18:11 +0200</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.9.3/Memois-v0.9.3-macOS.zip"
+                sparkle:version="10"
+                sparkle:shortVersionString="0.9.3"
+                length="4094378"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.9.2</title>
             <description><![CDATA[
 <h2>What's New in 0.9.2</h2>
