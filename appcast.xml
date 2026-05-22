@@ -7,6 +7,26 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.9.4</title>
+            <description><![CDATA[
+<h2>What's New in 0.9.4</h2>
+<ul>
+    <li><strong>Single-monitor fix</strong> — The Record confirmation panel no longer disappears off-screen after you unplug an external display. Stale saved positions that fall outside the current screens are dropped automatically.</li>
+    <li><strong>Centered preflight</strong> — The confirmation modal now appears centered on the active screen so it's easy to spot. Once recording starts, the pill returns to its usual spot above the Dock.</li>
+</ul>
+            ]]></description>
+            <pubDate>Fri, 22 May 2026 11:28:55 +0200</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.9.4/Memois-v0.9.4-macOS.zip"
+                sparkle:version="11"
+                sparkle:shortVersionString="0.9.4"
+                length="4094923"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.9.3</title>
             <description><![CDATA[
 <h2>What's New in 0.9.3</h2>

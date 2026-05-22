@@ -120,6 +120,12 @@ final class DockTabController {
                 } else if state != .recording {
                     p.resignKey()
                 }
+                // Re-place the panel on state transitions so the centered
+                // preflight modal collapses back to the above-dock pill once
+                // recording actually starts.
+                if self.isVisible {
+                    self.reposition()
+                }
             }
             .store(in: &cancellables)
     }
@@ -142,18 +148,33 @@ final class DockTabController {
         let width = CGFloat(settings.liveSubtitlesPanelWidth)
         let height = CGFloat(settings.liveSubtitlesPanelHeight)
 
-        // If free positioning is on and we have saved coordinates, use them
+        // If free positioning is on and we have saved coordinates, use them —
+        // but only if they still land on a currently-connected screen. After
+        // unplugging an external display the saved coords can point off-screen,
+        // hiding the preflight confirmation so recording can't be started.
         if settings.floatingPanelFreePosition,
            let savedX = settings.floatingPanelX,
            let savedY = settings.floatingPanelY {
-            panel.setFrame(NSRect(x: savedX, y: savedY, width: width, height: height), display: true)
-            return
+            let savedFrame = NSRect(x: savedX, y: savedY, width: width, height: height)
+            if NSScreen.screens.contains(where: { $0.visibleFrame.intersects(savedFrame) }) {
+                panel.setFrame(savedFrame, display: true)
+                return
+            }
+            settings.floatingPanelX = nil
+            settings.floatingPanelY = nil
         }
 
         let screen = focusedScreen()
         let x = screen.visibleFrame.midX - (width / 2)
-        let dockHeight = max(screen.visibleFrame.minY - screen.frame.minY, 70)
-        let y = screen.frame.minY + dockHeight + 4
+        let y: CGFloat
+        if model?.sessionState == .preparing {
+            // Center vertically on screen so the preflight confirmation reads
+            // as a modal — easier to spot than tucked above the dock.
+            y = screen.visibleFrame.midY - (height / 2)
+        } else {
+            let dockHeight = max(screen.visibleFrame.minY - screen.frame.minY, 70)
+            y = screen.frame.minY + dockHeight + 4
+        }
         panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
     }
 
