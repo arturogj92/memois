@@ -33,6 +33,8 @@ struct MainWindowView: View {
     @State private var isRecordingScreenshotShortcut = false
     @State private var availableDevices: [AudioDevice] = []
     @State private var searchText = ""
+    @State private var searchResults: [Recording] = []
+    @State private var filterTask: Task<Void, Never>?
     @State private var displayLimit = 10
     @State private var sidebarCollapsed = false
     @State private var isEditingAPIKey = false
@@ -93,27 +95,27 @@ struct MainWindowView: View {
         return key.prefix(4) + String(repeating: "\u{2022}", count: key.count - 8) + key.suffix(4)
     }
 
+    // Cheap: when not searching, show the live list; when searching, show precomputed results.
+    // The actual filtering happens off the keystroke path in `updateSearchResults()`.
     private var filteredRecordings: [Recording] {
-        if searchText.isEmpty { return model.recordings }
-        return model.recordings.filter { recording in
-            let dateStr = recording.createdAt.formatted(date: .abbreviated, time: .shortened)
-            if dateStr.localizedCaseInsensitiveContains(searchText) ||
-                recording.transcriptionStatus.rawValue.localizedCaseInsensitiveContains(searchText) ||
-                (recording.folderName ?? "").localizedCaseInsensitiveContains(searchText) ||
-                (recording.name ?? "").localizedCaseInsensitiveContains(searchText) ||
-                recording.formattedDuration.contains(searchText) {
-                return true
-            }
-            // Search in transcript content
-            if let text = model.readTranscript(for: recording) {
-                return text.localizedCaseInsensitiveContains(searchText)
-            }
-            return false
-        }
+        searchText.isEmpty ? model.recordings : searchResults
     }
 
     private var visibleRecordings: [Recording] {
         Array(filteredRecordings.prefix(displayLimit))
+    }
+
+    /// Recompute search results without blocking the keyboard: debounce briefly, then run the
+    /// cheap prebuilt-index match. Cancels any in-flight computation when the query changes.
+    private func updateSearchResults() {
+        filterTask?.cancel()
+        let query = searchText
+        guard !query.isEmpty else { return } // empty query is handled live by `filteredRecordings`
+        filterTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 120_000_000) // 120ms debounce
+            if Task.isCancelled || query != searchText { return }
+            searchResults = model.recordingsMatching(query)
+        }
     }
 
     var body: some View {
@@ -436,7 +438,11 @@ struct MainWindowView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.surfaceCard)
             )
-            .onChange(of: searchText) { displayLimit = 10 }
+            .onChange(of: searchText) {
+                displayLimit = 10
+                updateSearchResults()
+            }
+            .onChange(of: model.searchIndexVersion) { updateSearchResults() }
 
             if model.isSavingRecording {
                 savingSkeletonRow()

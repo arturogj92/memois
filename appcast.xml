@@ -7,6 +7,25 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.9.5</title>
+            <description><![CDATA[
+<h2>What's New in 0.9.5</h2>
+<ul>
+    <li><strong>Much faster search</strong> — Typing in the recordings search no longer freezes the UI or makes the keyboard stutter, even with a large library. Search now runs against a prebuilt in-memory index that's kept up to date in the background, so filtering never blocks the main thread.</li>
+</ul>
+            ]]></description>
+            <pubDate>Sat, 20 Jun 2026 18:58:58 +0200</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.9.5/Memois-v0.9.5-macOS.zip"
+                sparkle:version="12"
+                sparkle:shortVersionString="0.9.5"
+                length="4135069"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.9.4</title>
             <description><![CDATA[
 <h2>What's New in 0.9.4</h2>

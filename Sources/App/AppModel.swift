@@ -32,6 +32,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var isSavingRecording = false
     @Published var repairingRecordingIDs: Set<UUID> = []
     @Published private(set) var screenshotCount = 0
+    /// Bumped whenever the search index changes, so the UI can refresh search results.
+    @Published private(set) var searchIndexVersion = 0
+
+    /// Transcript text cached in memory (loaded off the main thread); used only to build the search index.
+    private var transcriptCache: [UUID: String] = [:]
+    /// Lowercased search haystack per recording id (date, name, folder, status, duration, transcript).
+    /// Built off the main thread so typing in the search box never does heavy work on the main thread.
+    private(set) var searchIndex: [UUID: String] = [:] {
+        didSet { searchIndexVersion &+= 1 }
+    }
 
     let settings: SettingsStore
     let transcriptionStats = TranscriptionStatsStore()
@@ -50,6 +60,7 @@ final class AppModel: ObservableObject {
     private var durationTimer: Timer?
     private var currentScreenshots: [Screenshot] = []
     private var screenshotWindow: ScreenshotSelectionWindow?
+    private var searchCancellables = Set<AnyCancellable>()
 
     init(
         settings: SettingsStore,
@@ -110,6 +121,17 @@ final class AppModel: ObservableObject {
         ) { [weak self] _ in
             self?.refreshPermissions()
         }
+
+        // Keep the search index in sync with recordings (rename, import, delete, transcription)
+        // by rebuilding it off the main thread whenever recordings change.
+        $recordings
+            .debounce(for: .milliseconds(200), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.rebuildSearchIndex() }
+            .store(in: &searchCancellables)
+
+        // Warm the search index off the main thread so the search box is responsive
+        // immediately, no matter how many recordings exist.
+        preloadSearchData()
     }
 
     /// Scan Recordings directory for folders not tracked in recordings.json and recover them
@@ -467,6 +489,7 @@ final class AppModel: ObservableObject {
                 recordings[index].transcriptionStatus = .completed
                 recordings[index].transcriptionFileName = txtFileName
                 recordings[index].speakerCount = result.utterances?.map(\.speaker).uniqued().count
+                transcriptCache[recordingID] = formatted
                 activeTranscription = .completed
                 recordingStore.save(recordings)
                 statusMessage = "Transcription complete"
@@ -541,7 +564,81 @@ final class AppModel: ObservableObject {
         }
 
         recordings.remove(at: index)
+        transcriptCache.removeValue(forKey: id)
         recordingStore.save(recordings)
+    }
+
+    /// Recordings whose prebuilt search haystack contains the query. Cheap: no disk, no date
+    /// formatting, no locale-aware comparison — just a substring scan over precomputed strings.
+    func recordingsMatching(_ query: String) -> [Recording] {
+        let needle = query.lowercased()
+        if needle.isEmpty { return recordings }
+        return recordings.filter { searchIndex[$0.id]?.range(of: needle) != nil }
+    }
+
+    /// Snapshot of the data needed to build one recording's search haystack, off the main thread.
+    private struct SearchSource: Sendable {
+        let id: UUID
+        let createdAt: Date
+        let status: String
+        let folder: String
+        let name: String
+        let durationSeconds: Double
+        let transcriptURL: URL?
+    }
+
+    private func searchSources() -> [SearchSource] {
+        recordings.map { rec in
+            SearchSource(
+                id: rec.id,
+                createdAt: rec.createdAt,
+                status: rec.transcriptionStatus.rawValue,
+                folder: rec.folderName ?? "",
+                name: rec.name ?? "",
+                durationSeconds: rec.durationSeconds,
+                transcriptURL: rec.transcriptionURL
+            )
+        }
+    }
+
+    /// Builds the lowercased haystack for one recording. `nonisolated` so it can run off the main actor.
+    private nonisolated static func searchHaystack(for source: SearchSource, transcript: String?) -> String {
+        let dateStr = source.createdAt.formatted(date: .abbreviated, time: .shortened)
+        let dur = String(format: "%d:%02d", Int(source.durationSeconds) / 60, Int(source.durationSeconds) % 60)
+        var parts = [dateStr, source.status, source.folder, source.name, dur]
+        if let transcript, !transcript.isEmpty { parts.append(transcript) }
+        return parts.joined(separator: "\n").lowercased()
+    }
+
+    /// One-time launch warm-up: read every transcript from disk and build the search index, all off the main thread.
+    private func preloadSearchData() {
+        let sources = searchSources()
+        Task.detached(priority: .utility) { [weak self] in
+            var transcripts: [UUID: String] = [:]
+            var index: [UUID: String] = [:]
+            for source in sources {
+                let transcript = source.transcriptURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+                if let transcript { transcripts[source.id] = transcript }
+                index[source.id] = AppModel.searchHaystack(for: source, transcript: transcript)
+            }
+            await MainActor.run {
+                self?.transcriptCache = transcripts
+                self?.searchIndex = index
+            }
+        }
+    }
+
+    /// Rebuild the search index from current recordings + the in-memory transcript cache (no disk), off the main thread.
+    private func rebuildSearchIndex() {
+        let cache = transcriptCache
+        let sources = searchSources()
+        Task.detached(priority: .utility) { [weak self] in
+            var index: [UUID: String] = [:]
+            for source in sources {
+                index[source.id] = AppModel.searchHaystack(for: source, transcript: cache[source.id])
+            }
+            await MainActor.run { self?.searchIndex = index }
+        }
     }
 
     func readTranscript(for recording: Recording) -> String? {
