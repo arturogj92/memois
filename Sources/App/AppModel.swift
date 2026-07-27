@@ -484,9 +484,12 @@ final class AppModel: ObservableObject {
                     }
                 }
 
-                // Update recording
+                // Update recording. AssemblyAI can fall back to another model for
+                // languages the requested one doesn't cover, so trust what it reports.
+                let modelUsed = result.speech_model_used ?? settings.transcriptionModel
                 guard let index = recordings.firstIndex(where: { $0.id == recordingID }) else { return }
                 recordings[index].transcriptionStatus = .completed
+                recordings[index].transcriptionModel = modelUsed
                 recordings[index].transcriptionFileName = txtFileName
                 recordings[index].speakerCount = result.utterances?.map(\.speaker).uniqued().count
                 transcriptCache[recordingID] = formatted
@@ -497,7 +500,7 @@ final class AppModel: ObservableObject {
                 // Track usage stats
                 transcriptionStats.recordTranscription(
                     durationSeconds: recording.durationSeconds,
-                    model: settings.transcriptionModel
+                    model: modelUsed
                 )
 
             } catch {

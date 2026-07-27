@@ -164,7 +164,10 @@ final class SettingsStore: ObservableObject {
         self.floatingPanelFreePosition = userDefaults.object(forKey: Keys.floatingPanelFreePosition) as? Bool ?? true
         self.floatingPanelX = userDefaults.object(forKey: Keys.floatingPanelX) as? Double
         self.floatingPanelY = userDefaults.object(forKey: Keys.floatingPanelY) as? Double
-        self.transcriptionModel = userDefaults.string(forKey: Keys.transcriptionModel) ?? "best"
+        // Carries over settings saved before AssemblyAI retired universal-3-pro / nano
+        self.transcriptionModel = TranscriptionModel.migrate(
+            storedID: userDefaults.string(forKey: Keys.transcriptionModel)
+        ).rawValue
         self.speakerDiarization = userDefaults.object(forKey: Keys.speakerDiarization) as? Bool ?? true
         self.liveSubtitlesEnabled = userDefaults.object(forKey: Keys.liveSubtitlesEnabled) as? Bool ?? false
         self.liveSubtitlesPanelExpanded = userDefaults.object(forKey: Keys.liveSubtitlesPanelExpanded) as? Bool ?? true
@@ -227,10 +230,9 @@ final class SettingsStore: ObservableObject {
 
     static let defaultModifierFlags: CGEventFlags = [.maskShift, .maskAlternate]
 
-    static let availableModels: [(id: String, label: String)] = [
-        ("best", "Best (Universal-3 Pro)"),
-        ("nano", "Nano (Fast & cheap)"),
-    ]
+    static let availableModels: [(id: String, label: String)] = TranscriptionModel.allCases.map {
+        (id: $0.rawValue, label: $0.label)
+    }
 
     func projects(for agent: HeadlessCodingAgent) -> [HeadlessCodingProject] {
         switch agent {

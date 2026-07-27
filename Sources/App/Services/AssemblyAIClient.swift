@@ -8,6 +8,8 @@ final class AssemblyAIClient {
         let text: String?
         let utterances: [Utterance]?
         let error: String?
+        /// Model AssemblyAI actually ran (may differ from the requested one when it falls back).
+        let speech_model_used: String?
 
         struct Utterance: Codable {
             let speaker: String
@@ -45,13 +47,10 @@ final class AssemblyAIClient {
             "speaker_labels": speakerLabels,
         ]
 
-        // Map model setting to AssemblyAI speech_models (list format)
-        switch model {
-        case "nano":
-            body["speech_model"] = "nano"
-        default:
-            body["speech_models"] = ["universal-3-pro"]
-        }
+        // Map model setting to AssemblyAI speech_models (list format).
+        // Universal-3.5 Pro covers 18 languages, so we list Universal-2 behind it
+        // as the fallback for everything else — same order AssemblyAI defaults to.
+        body["speech_models"] = TranscriptionModel.speechModels(for: model)
 
         var request = URLRequest(url: URL(string: "\(baseURL)/transcript")!)
         request.httpMethod = "POST"

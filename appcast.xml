@@ -7,6 +7,27 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.9.6</title>
+            <description><![CDATA[
+<h2>What's New in 0.9.6</h2>
+<ul>
+    <li><strong>New transcription models</strong> — AssemblyAI retired Universal-3 Pro and Nano, which made transcriptions fail with a "speech model has been deprecated" error. Memois now uses <strong>Universal-3.5 Pro</strong> (the most accurate model yet) and <strong>Universal-2</strong> (cheaper, 99 languages). Your model preference is migrated automatically, and any recording that failed can simply be transcribed again.</li>
+    <li><strong>Automatic language fallback</strong> — Universal-3.5 Pro covers 18 languages; anything else falls back to Universal-2 instead of failing.</li>
+    <li><strong>Accurate cost estimates</strong> — Usage stats now price each model correctly and show which model actually ran.</li>
+</ul>
+            ]]></description>
+            <pubDate>Mon, 27 Jul 2026 11:59:08 +0200</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.9.6/Memois-v0.9.6-macOS.zip"
+                sparkle:version="13"
+                sparkle:shortVersionString="0.9.6"
+                length="4140591"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.9.5</title>
             <description><![CDATA[
 <h2>What's New in 0.9.5</h2>

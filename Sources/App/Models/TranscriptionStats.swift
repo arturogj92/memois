@@ -25,19 +25,12 @@ struct TranscriptionStats: Codable {
         return String(format: "%dm %02ds", minutes, secs)
     }
 
-    /// Estimated cost based on AssemblyAI pricing ($0.15/hr best, $0.0265/hr nano)
+    /// Estimated cost based on AssemblyAI's per-model hourly pricing
     var estimatedCostUSD: Double {
-        var cost = 0.0
-        for (model, seconds) in totalSecondsByModel {
-            let hours = seconds / 3600
-            switch model {
-            case "nano":
-                cost += hours * 0.0265
-            default:
-                cost += hours * 0.15
-            }
+        totalSecondsByModel.reduce(0.0) { cost, entry in
+            let (model, seconds) = entry
+            return cost + (seconds / 3600) * TranscriptionModel.pricePerHourUSD(forRecordedID: model)
         }
-        return cost
     }
 
     var formattedCost: String {

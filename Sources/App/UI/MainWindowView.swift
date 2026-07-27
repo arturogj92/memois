@@ -890,11 +890,11 @@ struct MainWindowView: View {
                         ForEach(stats.totalByModel.keys.sorted(), id: \.self) { model in
                             let count = stats.totalByModel[model] ?? 0
                             let duration = stats.formattedDuration(for: model)
-                            let modelLabel = model == "best" ? "Universal-3 Pro" : model == "nano" ? "Nano" : model
+                            let modelLabel = TranscriptionModel.label(forRecordedID: model)
 
                             HStack {
                                 Circle()
-                                    .fill(model == "best" ? Color.brandCyan : Color.brandYellow)
+                                    .fill(model == TranscriptionModel.universal35Pro.rawValue ? Color.brandCyan : Color.brandYellow)
                                     .frame(width: 8, height: 8)
                                 Text(modelLabel)
                                     .font(.system(size: 12, weight: .medium))
