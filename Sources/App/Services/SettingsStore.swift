@@ -141,6 +141,13 @@ final class SettingsStore: ObservableObject {
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
+        // One-time migration: settings written under the pre-0.10.0 bundle id
+        if userDefaults.string(forKey: Keys.assemblyAIKey) == nil,
+           let legacy = userDefaults.persistentDomain(forName: "com.vzgb9jp.memois") {
+            for (key, value) in legacy where key.hasPrefix("settings.") {
+                userDefaults.set(value, forKey: key)
+            }
+        }
         // Default shortcut: Option + Shift + R
         self.assemblyAIKey = userDefaults.string(forKey: Keys.assemblyAIKey) ?? ""
         self.shortcutKeyCode = userDefaults.object(forKey: Keys.shortcutKeyCode) as? Int ?? kVK_ANSI_R

@@ -7,6 +7,26 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.10.0</title>
+            <description><![CDATA[
+<h2>What's New in 0.10.0</h2>
+<ul>
+    <li><strong>Fixed: microphone permission never prompted on new Macs</strong> — the released build was missing the microphone entitlement, so macOS silently denied access and Memois never appeared in System Settings &gt; Privacy &amp; Security &gt; Microphone. Fresh installs now get the permission prompt as expected.</li>
+    <li><strong>New app identifier</strong> — Memois now ships as <code>com.arturogj92.memois</code>. Your recordings and settings carry over automatically; macOS will ask for microphone and screen recording permission once again after updating.</li>
+</ul>
+            ]]></description>
+            <pubDate>Sat, 15 Aug 2026 17:32:06 +0200</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.10.0/Memois-v0.10.0-macOS.zip"
+                sparkle:version="14"
+                sparkle:shortVersionString="0.10.0"
+                length="4138956"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.9.6</title>
             <description><![CDATA[
 <h2>What's New in 0.9.6</h2>
