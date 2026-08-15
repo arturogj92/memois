@@ -8,8 +8,11 @@
 
         <item>
             <title>Version 0.10.0</title>
+            <sparkle:informationalUpdate/>
+            <link>https://github.com/arturogj92/memois/releases/tag/v0.10.0</link>
             <description><![CDATA[
 <h2>What's New in 0.10.0</h2>
+<p><strong>This update must be installed manually (one time only).</strong> Memois changed its app identifier, so the built-in updater can't install it. Click "Learn More…" (or open the link below), download <code>Memois-v0.10.0-macOS.zip</code>, and drag Memois to Applications replacing the old one. Automatic updates resume normally afterwards.</p>
 <ul>
     <li><strong>Fixed: microphone permission never prompted on new Macs</strong> — the released build was missing the microphone entitlement, so macOS silently denied access and Memois never appeared in System Settings &gt; Privacy &amp; Security &gt; Microphone. Fresh installs now get the permission prompt as expected.</li>
     <li><strong>New app identifier</strong> — Memois now ships as <code>com.arturogj92.memois</code>. Your recordings and settings carry over automatically; macOS will ask for microphone and screen recording permission once again after updating.</li>
