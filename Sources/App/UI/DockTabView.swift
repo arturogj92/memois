@@ -8,6 +8,11 @@ struct DockTabView: View {
     var onStartFromPreflight: @MainActor () -> Void
     var onCancelPreflight: @MainActor () -> Void
     var onExpandChanged: @MainActor (Bool) -> Void
+    /// Drag of the compact pill: called with `false` while moving, `true` on release.
+    var onPillDrag: @MainActor (_ ended: Bool) -> Void = { _ in }
+    /// The compact pill's frame in window coordinates (top-left origin), or nil
+    /// when the big pill fills the panel. Used to accept clicks only on the pill.
+    var onPillFrameChanged: @MainActor (CGRect?) -> Void = { _ in }
 
     @State private var isExpanded = false
     @State private var availableDevices: [AudioDevice] = []
@@ -119,6 +124,17 @@ struct DockTabView: View {
         )
         .frame(maxWidth: bigPill ? .infinity : (isError ? 260 : nil))
         .contentShape(RoundedRectangle(cornerRadius: bigPill ? 14 : 8))
+        .background(GeometryReader { geo in
+            let frame = bigPill ? nil : geo.frame(in: .global)
+            Color.clear
+                .onAppear { onPillFrameChanged(frame) }
+                .onChange(of: frame) { _, newFrame in onPillFrameChanged(newFrame) }
+        })
+        .gesture(
+            DragGesture(minimumDistance: 3)
+                .onChanged { _ in if !bigPill { onPillDrag(false) } }
+                .onEnded { _ in if !bigPill { onPillDrag(true) } }
+        )
         .onTapGesture {
             if isRecording && !isExpanded {
                 withAnimation(.easeInOut(duration: 0.25)) {

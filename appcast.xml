@@ -7,6 +7,33 @@
         <language>en</language>
 
         <item>
+            <title>Version 0.10.1</title>
+            <sparkle:informationalUpdate>
+                <sparkle:belowVersion>14</sparkle:belowVersion>
+            </sparkle:informationalUpdate>
+            <link>https://github.com/arturogj92/memois/releases/tag/v0.10.1</link>
+            <description><![CDATA[
+<h2>What's New in 0.10.1</h2>
+<ul>
+    <li><strong>Recordings no longer go silent without warning</strong>. Memois now checks the microphone and system audio every few seconds. If either stops, Memois reconnects it automatically. If it can't, you get a notification and a warning in the recording pill.</li>
+    <li><strong>Microphone survives device changes</strong>. Switching headsets, Bluetooth headphones entering call mode or another app reconfiguring the mic no longer stop the microphone. Memois rebuilds it and falls back to the default input if your chosen mic is gone.</li>
+    <li><strong>System audio comes back after the display sleeps</strong>. The display stays awake while you record, and if the screen still turns off, system audio reconnects as soon as it is back.</li>
+    <li><strong>No more truncated recordings</strong>. When one source dropped out for a while, the merged recording was cut short and lost microphone audio. Both sources now stay aligned and keep their full length.</li>
+    <li><strong>Easier to move the recording pill</strong>. Drag it from the pill itself, and the invisible area around it no longer blocks clicks on the windows behind.</li>
+</ul>
+            ]]></description>
+            <pubDate>Tue, 10 Nov 2026 07:49:57 +0100</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/arturogj92/memois/releases/download/v0.10.1/Memois-v0.10.1-macOS.zip"
+                sparkle:version="15"
+                sparkle:shortVersionString="0.10.1"
+                length="4105954"
+                type="application/octet-stream"
+            />
+        </item>
+
+        <item>
             <title>Version 0.10.0</title>
             <sparkle:informationalUpdate/>
             <link>https://github.com/arturogj92/memois/releases/tag/v0.10.0</link>

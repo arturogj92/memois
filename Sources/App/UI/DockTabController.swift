@@ -24,12 +24,17 @@ final class DockTabController {
     private var isRepositioning = false
     /// Track whether the panel should be visible (only during recording)
     private var isVisible = false
+    /// Compact pill frame inside the panel (SwiftUI top-left coordinates).
+    private var pillFrameInWindow: CGRect?
+    /// Mouse + panel origin when a pill drag started.
+    private var dragStart: (mouse: NSPoint, origin: NSPoint)?
 
     @MainActor init(model: AppModel, settings: SettingsStore) {
         self.model = model
         self.settings = settings
         // Placeholder — will be set after panel is created
         var panelRef: NonActivatingPanel?
+        weak var weakSelf: DockTabController?
         let tabView = DockTabView(
             model: model,
             settings: settings,
@@ -45,7 +50,9 @@ final class DockTabController {
                 } else {
                     p.resignKey()
                 }
-            }
+            },
+            onPillDrag: { @MainActor ended in weakSelf?.dragPill(ended: ended) },
+            onPillFrameChanged: { @MainActor frame in weakSelf?.pillFrameInWindow = frame }
         )
         hostingController = NSHostingController(rootView: tabView)
 
@@ -69,6 +76,7 @@ final class DockTabController {
         panel.ignoresMouseEvents = true
         panel.isMovableByWindowBackground = settings.floatingPanelFreePosition
 
+        weakSelf = self
         setupMouseTracking()
         setupRightClickMonitor()
         setupScreenFollowing()
@@ -230,10 +238,29 @@ final class DockTabController {
     // MARK: - Mouse tracking: only accept events when cursor is over the pill
 
     private func pillScreenRect() -> NSRect {
-        // Now that the hosting controller auto-sizes, the panel.frame reflects
-        // the actual pill bounds. Use it directly so click area matches what
-        // the user sees — no more dead zones above the visible pill.
-        return panel.frame
+        // The panel is sized for the expanded/subtitles view, so the compact
+        // pill only fills its bottom part. Accept clicks on the pill itself,
+        // not on the transparent area around it.
+        guard let pill = pillFrameInWindow else { return panel.frame }
+        let frame = panel.frame
+        return NSRect(x: frame.minX + pill.minX, y: frame.maxY - pill.maxY,
+                      width: pill.width, height: pill.height)
+    }
+
+    /// Moves the panel with the mouse while the compact pill is dragged.
+    private func dragPill(ended: Bool) {
+        guard settings.floatingPanelFreePosition else { return }
+        let mouse = NSEvent.mouseLocation
+        if ended {
+            dragStart = nil
+            return
+        }
+        guard let start = dragStart else {
+            dragStart = (mouse, panel.frame.origin)
+            return
+        }
+        panel.setFrameOrigin(NSPoint(x: start.origin.x + mouse.x - start.mouse.x,
+                                     y: start.origin.y + mouse.y - start.mouse.y))
     }
 
     private func setupMouseTracking() {

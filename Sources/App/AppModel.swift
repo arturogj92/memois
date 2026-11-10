@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Combine
 import Foundation
+import UserNotifications
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -23,6 +24,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var sessionState: SessionState = .idle
     @Published private(set) var statusMessage = "Ready"
     @Published private(set) var micLevel: Float = 0
+    /// Set while a capture source is lost during recording; shown in the floating panel.
+    @Published private(set) var captureWarning: String?
     @Published private(set) var systemLevel: Float = 0
     @Published private(set) var recordingDuration: TimeInterval = 0
     @Published private(set) var permissionStatus: PermissionStatus
@@ -112,6 +115,10 @@ final class AppModel: ObservableObject {
             Task { @MainActor [weak self] in
                 self?.liveTranscription.ingestSystem(sampleBuffer)
             }
+        }
+        audioRecorder.onCaptureProblem = { [weak self] message in
+            self?.captureWarning = message
+            if let message { Self.postCaptureNotification(message) }
         }
 
         NotificationCenter.default.addObserver(
@@ -368,8 +375,21 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private static func postCaptureNotification(_ message: String) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Recording problem"
+            content.body = message
+            content.sound = .default
+            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
+    }
+
     private func stopRecording() {
         guard sessionState == .recording else { return }
+        captureWarning = nil
 
         durationTimer?.invalidate()
         durationTimer = nil

@@ -102,6 +102,14 @@ struct FloatingPanelView: View {
                         }
                     }
 
+                    if let warning = model.captureWarning {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     if model.settings.liveSubtitlesEnabled && model.settings.liveSubtitlesPanelExpanded {
                         SubtitlesPanelView(service: model.liveTranscription, settings: model.settings)
                     }
